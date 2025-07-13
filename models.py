@@ -69,7 +69,7 @@ class Seller(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     telegram_id = Column(Integer, nullable=False, unique=True)
-    number = Column(String, nullable=False, unique=True)
+    number = Column(String, nullable=False, unique=True)    
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now)
     
@@ -79,8 +79,8 @@ class ReferralCode(Base):
 
     id = Column(Integer, primary_key=True)
     owner_id = Column(Integer, ForeignKey("sellers.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     code = Column(String, nullable=False, unique=True)
+    grade = Column(SqlEnum(GradeEnum), nullable=False)
     discount = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now)

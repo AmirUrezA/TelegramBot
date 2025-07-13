@@ -1,5 +1,5 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler, ConversationHandler
 import logging
 import os
 from dotenv import load_dotenv
@@ -7,6 +7,10 @@ from db import engine, Base, AsyncSessionLocal
 import asyncio
 from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum
 from sqlalchemy import select
+from kavenegar import *
+import re
+import random
+from typing import Optional
 
 load_dotenv()
 
@@ -30,6 +34,114 @@ major_map = {
     "عمومی": MajorEnum.GENERAL,
 }
 
+(ASK_NAME, ASK_PHONE, ASK_OTP) = range(3)
+
+def is_valid_persian_name(name: str) -> bool:
+    # فقط حروف فارسی، بین 2 تا 5 کلمه
+    return bool(re.fullmatch(r"[آ-ی\s]{5,50}", name.strip()))
+
+async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.effective_user:
+        return
+    async with AsyncSessionLocal() as session:
+        telegram_id = update.effective_user.id
+        result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+        user = result.scalar_one_or_none()
+        if user and user.approved is True:
+            await update.message.reply_text("شما قبلاً ثبت‌نام کردید ✅")
+            return ConversationHandler.END
+    await update.message.reply_text("👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:")
+    return ASK_NAME
+
+async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    name = update.message.text.strip()
+    if not is_valid_persian_name(name):
+        await update.message.reply_text("❌ لطفاً نام و نام خانوادگی را به‌درستی و به زبان فارسی وارد کنید.")
+        return ASK_NAME
+    
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["full_name"] = name
+    await update.message.reply_text("📱 حالا شماره موبایل خود را وارد کنید (مثال: 09123456789):")
+    return ASK_PHONE
+
+def is_valid_phone(number: str) -> bool:
+    return bool(re.fullmatch(r"09\d{9}", number))
+
+async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    phone = update.message.text.strip()
+    if not is_valid_phone(phone):
+        await update.message.reply_text("❌ شماره وارد شده معتبر نیست. لطفاً شماره را به صورت صحیح وارد کنید.")
+        return ASK_PHONE
+
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["phone"] = phone
+
+    otp = str(random.randint(1000, 9999))
+    context.user_data["otp"] = otp
+
+    # ارسال OTP با Kavenegar
+    try:
+        api = KavenegarAPI(os.getenv("KAVENEGAR_API_KEY"))
+        api.verify_lookup({
+            "receptor": phone,
+            "token": otp,
+            "template": "verify",
+            "type": "sms"
+        })
+    except Exception as e:
+        await update.message.reply_text(f"خطا در ارسال پیامک: {e}")
+        return ConversationHandler.END
+
+    await update.message.reply_text("✅ کد تایید پیامک شد. لطفاً کد را وارد کنید:")
+    return ASK_OTP
+
+async def handle_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text or not update.effective_user:
+        return
+    code = update.message.text.strip()
+    if context.user_data is None or code != context.user_data.get("otp"):
+        await update.message.reply_text("❌ کد وارد شده صحیح نیست. دوباره تلاش کنید:")
+        return ASK_OTP
+
+    full_name = context.user_data["full_name"]
+    phone = context.user_data["phone"]
+    telegram_id = update.effective_user.id
+    username = update.effective_user.username or ""
+
+    async with AsyncSessionLocal() as session:
+        user_result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+        user = user_result.scalar_one_or_none()
+
+        if user:
+            # Use setattr to avoid type checking issues
+            setattr(user, 'approved', True)
+            setattr(user, 'number', phone)
+            setattr(user, 'username', username)
+        else:
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                number=phone,
+                approved=True
+            )
+            session.add(user)
+
+        await session.commit()
+
+    await update.message.reply_text("🎉 ثبت‌نام شما با موفقیت انجام شد!")
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        await update.message.reply_text("ثبت‌نام لغو شد.")
+    return ConversationHandler.END
+
 async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: int):
     """Start the buying process for a product"""
     print(f"buy_product called with product_id: {product_id}")  # Debug log
@@ -47,7 +159,7 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
         if not user or user.approved is False:
             keyboard = [
                 [InlineKeyboardButton("👤 ثبت نام", callback_data="authorize")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -56,7 +168,7 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
                     "شما هنوز ثبت نام نکردید برای خرید نیاز است که ابتدا ثبت نام کنید", 
                     reply_markup=reply_markup
                 )
-            else:
+            elif update.message:
                 await update.message.reply_text(
                     "شما هنوز ثبت نام نکردید برای خرید نیاز است که ابتدا ثبت نام کنید", 
                     reply_markup=reply_markup
@@ -76,8 +188,14 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
         
         if update.callback_query:
             # For callback queries, send a new message
-            await update.callback_query.message.reply_text("کد معرف دارید؟", reply_markup=reply_markup)
-        else:
+            await update.callback_query.answer()
+            # Use context to send a new message
+            await context.bot.send_message(
+                chat_id=update.callback_query.from_user.id,
+                text="کد معرف دارید؟",
+                reply_markup=reply_markup
+            )
+        elif update.message:
             await update.message.reply_text("کد معرف دارید؟", reply_markup=reply_markup)
 
 async def handle_referral_code_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -144,8 +262,7 @@ async def process_order_with_referral(update: Update, context: ContextTypes.DEFA
             user_id=user.id,
             product_id=product.id,
             status=OrderStatusEnum.PENDING,
-            referral_code_id=referral.id,
-            discount_amount=discount_amount,
+            discount=discount_amount,
             final_price=final_price
         )
         
@@ -205,7 +322,7 @@ async def process_order_without_referral(update: Update, context: ContextTypes.D
             user_id=user.id,
             product_id=product.id,
             status=OrderStatusEnum.PENDING,
-            discount_amount=default_discount,
+            discount=default_discount,
             final_price=final_price
         )
         
@@ -279,8 +396,10 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except (ValueError, IndexError) as e:
             print(f"Error parsing product ID: {e}")
             await query.edit_message_text("خطا در پردازش درخواست خرید")
-    elif query.data == "back":
+    elif query.data == "back_to_menu":
         await start(update, context)
+    elif query.data == "authorize":
+        return await ask_name(update, context)
     else:
         print(f"Unknown button data: {query.data}")  # Debug log
 
@@ -308,7 +427,7 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
             if product:
                 keyboard = [
                     [InlineKeyboardButton("🛒 خرید", callback_data=f"buy_{product.id}")],
-                    [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
+                    [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.message.reply_text(
@@ -347,7 +466,7 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
     
     # Handle main menu options
     elif user_input == "👤 ثبت نام":
-        await authorize(update, context)
+        return await ask_name(update, context)
     elif user_input == "🎲 قرعه کشی":
         await lottery(update, context)
     elif user_input == "📚 محصولات":
@@ -449,13 +568,6 @@ async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "برای ارتباط با ما و پشتیبانی میتونید به آیدی @Arshya_Alaee پیام بدید😊"
     )
 
-async def authorize(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Authorize command handler"""
-    if not update.message:
-        return
-    
-    await update.message.reply_text("لطفا نام و نام خانوادگی خود را وارد کنید")
-
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """Error handler"""
     logging.error(f"Update {update} caused error: {context.error}")
@@ -469,12 +581,22 @@ if __name__ == '__main__':
     BOT_TOKEN = os.getenv('BOT_TOKEN')
     app = ApplicationBuilder().token(str(BOT_TOKEN)).build()
     
+    app.add_handler(ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name)],
+    states={
+        ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
+        ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
+        ASK_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_otp)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+    ))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("products", products))   
     app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard_button))
     app.add_error_handler(error_handler)
+
     
     print("Bot is running...")
     app.run_polling()
