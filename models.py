@@ -1,5 +1,5 @@
 from random import choice
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from datetime import datetime
 from sqlalchemy.types import Enum as SqlEnum
 from enum import Enum
@@ -21,10 +21,13 @@ class MajorEnum(Enum):
     LECTURE = "lecture"
     GENERAL = "general"
 
+class OrderStatusEnum(Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 class Product(Base):
     __tablename__ = "products"
-
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
@@ -42,6 +45,42 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     telegram_id = Column(Integer, nullable=False, unique=True)
     username = Column(String, nullable=False, unique=False)
+    number = Column(String, nullable=False, unique=True)
     approved = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
     approved_at = Column(DateTime, default=datetime.now)
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    status = Column(SqlEnum(OrderStatusEnum), nullable=False)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True)
+    discount = Column(Integer, default=0)
+    final_price = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    approved_at = Column(DateTime, default=datetime.now)
+
+class Seller(Base):
+    __tablename__ = "sellers"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    telegram_id = Column(Integer, nullable=False, unique=True)
+    number = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now)
+    
+
+class ReferralCode(Base):
+    __tablename__ = "referral_codes"
+
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(Integer, ForeignKey("sellers.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    code = Column(String, nullable=False, unique=True)
+    discount = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now)
