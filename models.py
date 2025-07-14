@@ -1,6 +1,7 @@
 from random import choice
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
-from datetime import datetime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table
+from datetime import date, datetime
+from sqlalchemy.orm import relationship
 from sqlalchemy.types import Enum as SqlEnum
 from enum import Enum
 from db import Base
@@ -25,6 +26,22 @@ class OrderStatusEnum(Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+class ReferralCodeProductEnum(str, Enum):
+    ALMAS = "almas"
+    GRADE_5 = "5"
+    GRADE_6 = "6"
+    GRADE_7 = "7"
+    GRADE_8 = "8"
+    GRADE_9 = "9"
+
+# Table for Many-to-Many between orders and files
+order_receipts = Table(
+    "order_receipts",
+    Base.metadata,
+    Column("order_id", ForeignKey("orders.id"), primary_key=True),
+    Column("file_id", ForeignKey("files.id"), primary_key=True)
+)
 
 class Product(Base):
     __tablename__ = "products"
@@ -58,21 +75,25 @@ class Order(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     status = Column(SqlEnum(OrderStatusEnum), nullable=False)
     seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True)
+    installment = Column(Boolean, nullable=False)
+    first_installment = Column(DateTime, nullable=True)
+    second_installment = Column(DateTime, nullable=True)
+    third_installment = Column(DateTime, nullable=True)
     discount = Column(Integer, default=0)
     final_price = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     approved_at = Column(DateTime, default=datetime.now)
+    receipts = relationship("File", secondary="order_receipts", back_populates="orders")
 
 class Seller(Base):
     __tablename__ = "sellers"
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     telegram_id = Column(Integer, nullable=False, unique=True)
-    number = Column(String, nullable=False, unique=True)    
+    number = Column(String, nullable=False, unique=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now)
-    
 
 class ReferralCode(Base):
     __tablename__ = "referral_codes"
@@ -80,7 +101,17 @@ class ReferralCode(Base):
     id = Column(Integer, primary_key=True)
     owner_id = Column(Integer, ForeignKey("sellers.id"), nullable=False)
     code = Column(String, nullable=False, unique=True)
-    grade = Column(SqlEnum(GradeEnum), nullable=False)
+    product = Column(SqlEnum(ReferralCodeProductEnum), nullable=False)
+    installment = Column(Boolean, nullable=False)
     discount = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now)
+
+class File(Base):
+    __tablename__ = "files"
+
+    id = Column(Integer, primary_key=True)
+    file_id = Column(String, nullable=False)
+    path = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    orders = relationship("Order", secondary="order_receipts", back_populates="receipts")

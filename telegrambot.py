@@ -1,16 +1,17 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler, ConversationHandler
 import logging
 import os
 from dotenv import load_dotenv
 from db import engine, Base, AsyncSessionLocal
 import asyncio
-from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum
-from sqlalchemy import select
+from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File
+from sqlalchemy import select, insert
 from kavenegar import *
 import re
 import random
 from typing import Optional
+from datetime import datetime
 
 load_dotenv()
 
@@ -35,6 +36,11 @@ major_map = {
 }
 
 (ASK_NAME, ASK_PHONE, ASK_OTP) = range(3)
+
+ASK_PAYMENT_METHOD, ASK_PAYMENT_PROOF = range(100, 102)
+
+# Card number (static)
+CARD_NUMBER = "6037-9918-6186-2085"
 
 def is_valid_persian_name(name: str) -> bool:
     # فقط حروف فارسی، بین 2 تا 5 کلمه
@@ -100,6 +106,57 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("✅ کد تایید پیامک شد. لطفاً کد را وارد کنید:")
     return ASK_OTP
+
+async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.photo or not update.effective_user:
+        await update.message.reply_text("لطفاً یک عکس از فیش واریزی ارسال کنید.")
+        return ASK_PAYMENT_PROOF
+
+    photo = update.message.photo[-1]
+    file_id = photo.file_id
+
+    # Download the photo to local storage
+    bot = context.bot
+    file = await bot.get_file(file_id)
+    file_path = f"receipts/receipt_{file_id}.jpg"
+    os.makedirs("receipts", exist_ok=True)
+    await file.download_to_drive(file_path)
+
+    async with AsyncSessionLocal() as session:
+        user_result = await session.execute(select(User).where(User.telegram_id == update.effective_user.id))
+        user = user_result.scalar_one_or_none()
+        if not user:
+            await update.message.reply_text("کاربر یافت نشد.")
+            return ConversationHandler.END
+
+        product = context.user_data.get("product_data")
+        referral = context.user_data.get("referral_data")
+        final_price = context.user_data.get("final_price")
+        installment = context.user_data.get("payment_type") == 'installment'
+        first_installment_amount = context.user_data.get("first_installment")
+
+        file_record = File(file_id=file_id, path=file_path)
+        session.add(file_record)
+        await session.flush()  # Get file.id before commit
+
+        order = Order(
+            user_id=user.id,
+            product_id=product.id,
+            status=OrderStatusEnum.PENDING,
+            discount=referral.discount if referral else context.user_data.get("discount", 0),
+            final_price=final_price,
+            installment=installment,
+            first_installment=datetime.now() if installment else None
+        )
+
+        session.add(order)
+        await session.flush()  # Get order.id before commit
+
+        await session.execute(insert(Order.__table__.metadata.tables['order_receipts']).values(order_id=order.id, file_id=file_record.id))
+        await session.commit()
+
+    await update.message.reply_text("✅ سفارش شما ثبت شد. بسته شما تا ساعاتی دیگر ارسال خواهد شد.")
+    return ConversationHandler.END
 
 async def handle_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text or not update.effective_user:
@@ -211,6 +268,7 @@ async def handle_referral_code_input(update: Update, context: ContextTypes.DEFAU
             context.user_data['waiting_for_referral_code'] = True
         return
     elif user_input == "کد معرف ندارم(تخفیف پیشفرض ربات)":
+        context.user_data['waiting_for_referral_code'] = False
         await process_order_without_referral(update, context)
         return
     elif context.user_data is not None and context.user_data.get('waiting_for_referral_code'):
@@ -219,135 +277,116 @@ async def handle_referral_code_input(update: Update, context: ContextTypes.DEFAU
         return
 
 async def process_order_with_referral(update: Update, context: ContextTypes.DEFAULT_TYPE, referral_code: str):
-    """Process order with referral code"""
     if not update.effective_user or not update.message:
         return
-    
+
     async with AsyncSessionLocal() as session:
-        # Check if referral code exists and is valid
         referral_result = await session.execute(
             select(ReferralCode).where(ReferralCode.code == referral_code)
         )
         referral = referral_result.scalar_one_or_none()
-        
+
         if not referral:
             await update.message.reply_text("کد معرف معتبر نیست. لطفا دوباره تلاش کنید:")
             return
-        
-        # Get product and user
+
         if context.user_data is None:
-            await update.message.reply_text("خطا در پردازش سفارش. لطفا دوباره تلاش کنید.")
-            return
+            context.user_data = {}
+
+        context.user_data['referral'] = referral_code
+        context.user_data['referral_data'] = referral
+        context.user_data['waiting_for_referral_code'] = False
+
         product_id = context.user_data.get('current_product_id')
-        if not product_id:
-            await update.message.reply_text("خطا در پردازش سفارش. لطفا دوباره تلاش کنید.")
-            return
-        
         product = await session.get(Product, product_id)
-        user_result = await session.execute(
-            select(User).where(User.telegram_id == update.effective_user.id)
-        )
-        user = user_result.scalar_one_or_none()
-        
-        if not product or not user:
-            await update.message.reply_text("خطا در پردازش سفارش. لطفا دوباره تلاش کنید.")
-            return
-        
-        # Calculate final price with discount
-        discount_amount = referral.discount
-        final_price = product.price - discount_amount
-        
-        # Create order
-        order = Order(
-            user_id=user.id,
-            product_id=product.id,
-            status=OrderStatusEnum.PENDING,
-            discount=discount_amount,
-            final_price=final_price
-        )
-        
-        session.add(order)
-        await session.commit()
-        
-        # Clear context data
-        if context.user_data is not None:
-            context.user_data.pop('waiting_for_referral_code', None)
-            context.user_data.pop('current_product_id', None)
-        
-        # Send confirmation message
-        keyboard = [["🔙 بازگشت به منو"]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-        
-        message = f"""✅ سفارش شما با موفقیت ثبت شد!
+        context.user_data['product_data'] = product
 
-        📦 محصول: {product.name}
-        💰 قیمت اصلی: {product.price:,} تومان
-        🎫 کد معرف: {referral_code}
-        💸 تخفیف: {referral.discount} تومان
-        💵 قیمت نهایی: {final_price:,} تومان
-
-        سفارش شما در حال بررسی است و به زودی با شما تماس خواهیم گرفت."""
-        
-        await update.message.reply_text(message, reply_markup=reply_markup)
+        # Check if user can choose installment
+        if product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12] and referral.product == ReferralCodeProductEnum.ALMAS and referral.installment:
+            keyboard = ReplyKeyboardMarkup([
+                ["پرداخت قسطی"],
+                ["پرداخت نقدی"]
+            ], resize_keyboard=True, one_time_keyboard=True)
+            await update.message.reply_text("نوع پرداخت خود را انتخاب کنید:", reply_markup=keyboard)
+            return ASK_PAYMENT_METHOD
+        else:
+            context.user_data['payment_type'] = 'cash'
+            await ask_for_payment_proof(update, context)
+            return ASK_PAYMENT_PROOF
 
 async def process_order_without_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process order without referral code (default discount)"""
     if not update.effective_user or not update.message:
         return
-    
+
     async with AsyncSessionLocal() as session:
         if context.user_data is None:
-            await update.message.reply_text("خطا در پردازش سفارش. لطفا دوباره تلاش کنید.")
-            return
+            context.user_data = {}
+
         product_id = context.user_data.get('current_product_id')
-        if not product_id:
-            await update.message.reply_text("خطا در پردازش سفارش. لطفا دوباره تلاش کنید.")
-            return
-        
         product = await session.get(Product, product_id)
-        user_result = await session.execute(
-            select(User).where(User.telegram_id == update.effective_user.id)
-        )
-        user = user_result.scalar_one_or_none()
-        
-        if not product or not user:
-            await update.message.reply_text("خطا در پردازش سفارش. لطفا دوباره تلاش کنید.")
-            return
-        
-        default_discount = 500000
-        discount_amount = default_discount
-        final_price = product.price - discount_amount
-        
-        order = Order(
-            user_id=user.id,
-            product_id=product.id,
-            status=OrderStatusEnum.PENDING,
-            discount=default_discount,
-            final_price=final_price
-        )
-        
-        session.add(order)
-        await session.commit()
-        
-        # Clear context data
-        if context.user_data is not None:
-            context.user_data.pop('waiting_for_referral_code', None)
-            context.user_data.pop('current_product_id', None)
-        
-        # Send confirmation message
-        keyboard = [["🔙 بازگشت به منو"]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-        
-        message = f"""✅ سفارش شما با موفقیت ثبت شد!
+        context.user_data['product_data'] = product
 
-        📦 محصول: {product.name}
-        💰 قیمت اصلی: {product.price:,} تومان
-        🎫 تخفیف پیشفرض: {default_discount} تومان
-        💵 قیمت نهایی: {final_price:,} تومان
+        context.user_data['referral'] = None
+        context.user_data['discount'] = 500000
+        context.user_data['waiting_for_referral_code'] = False
 
-        سفارش شما در حال بررسی است و به زودی با شما تماس خواهیم گرفت."""
-        
-        await update.message.reply_text(message, reply_markup=reply_markup)
+
+        # Check if installment is allowed
+        if product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12]:
+            keyboard = ReplyKeyboardMarkup([
+                ["پرداخت قسطی"],
+                ["پرداخت نقدی"]
+            ], resize_keyboard=True, one_time_keyboard=True)
+            await update.message.reply_text("نوع پرداخت خود را انتخاب کنید:", reply_markup=keyboard)
+            return ASK_PAYMENT_METHOD
+        else:
+            context.user_data['payment_type'] = 'cash'
+            await ask_for_payment_proof(update, context)
+            return ASK_PAYMENT_PROOF
+
+async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
+    payment_type = update.message.text.strip()
+    if context.user_data is None:
+        context.user_data = {}
+
+    if payment_type not in ["پرداخت نقدی", "پرداخت قسطی"]:
+        await update.message.reply_text("❌ لطفا یکی از گزینه‌های پرداخت را انتخاب کنید.")
+        return ASK_PAYMENT_METHOD
+
+    context.user_data['payment_type'] = 'installment' if payment_type == "پرداخت قسطی" else 'cash'
+    await ask_for_payment_proof(update, context)
+    return ASK_PAYMENT_PROOF
+
+async def ask_for_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
+    product = context.user_data.get("product_data")
+    discount = 0
+    referral = context.user_data.get("referral_data")
+
+    if referral:
+        discount = referral.discount
+    else:
+        discount = context.user_data.get("discount", 0)
+
+    final_price = product.price - discount
+    installment = context.user_data['payment_type'] == 'installment'
+
+    if installment:
+        first_payment = final_price // 3
+        msg = f"💳 مبلغ قسط اول: {first_payment:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER}\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید."
+    else:
+        msg = f"💳 مبلغ قابل پرداخت: {final_price:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER}\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید."
+
+    context.user_data['final_price'] = final_price
+    context.user_data['first_installment'] = final_price // 3 if installment else final_price
+
+    await update.message.reply_text(msg, reply_markup=ReplyKeyboardRemove())
+    return ASK_PAYMENT_PROOF
 
 async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE, grade, major=None):
     """Show products for selected grade and major"""
@@ -590,10 +629,20 @@ if __name__ == '__main__':
     },
     fallbacks=[CommandHandler("cancel", cancel)],
     ))
+    app.add_handler(ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("^(🛒 خرید)$"), buy_product)],
+    states={
+        ASK_PAYMENT_METHOD: [MessageHandler(filters.TEXT, handle_payment_method)],
+        ASK_PAYMENT_PROOF: [MessageHandler(filters.PHOTO, handle_payment_proof)],
+    },    
+    fallbacks=[CommandHandler("cancel", cancel)],
+    ))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("products", products))   
     app.add_handler(CallbackQueryHandler(handle_button))
+    app.add_handler(MessageHandler(filters.Regex("^(پرداخت نقدی|پرداخت قسطی)$"), handle_payment_method))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_payment_proof))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard_button))
     app.add_error_handler(error_handler)
 
