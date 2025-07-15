@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from db import engine, Base, AsyncSessionLocal
 import asyncio
-from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File
+from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File, CRM
 from sqlalchemy import select, insert
 from kavenegar import *
 import re
@@ -216,6 +216,7 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
         if not user or user.approved is False:
             keyboard = [
                 [InlineKeyboardButton("👤 ثبت نام", callback_data="authorize")],
+                [InlineKeyboardButton("هنوز مطمعن نیستم", callback_data="not_sure")],
                 [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -309,6 +310,14 @@ async def process_order_with_referral(update: Update, context: ContextTypes.DEFA
             ], resize_keyboard=True, one_time_keyboard=True)
             await update.message.reply_text("نوع پرداخت خود را انتخاب کنید:", reply_markup=keyboard)
             return ASK_PAYMENT_METHOD
+        elif product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12] and referral.product == ReferralCodeProductEnum.ALMAS and not referral.installment:
+            keyboard = ReplyKeyboardMarkup([
+                ["پرداخت نقدی"],
+                ["🔙 بازگشت به منو"]
+            ], resize_keyboard=True, one_time_keyboard=True)
+            await update.message.reply_text("کد تخفیف شما قابلیت پرداخت قسطی ندارد میتوانید از شرایط اقساطی پیشفرض ربات استفاده کنید و پرداخت قسطی انجام دهید برای این کار دکمه بازگشت را بفرستید در غیر این صورت خرید نقدی را انتخاب کنید:", reply_markup=keyboard)
+            await ask_for_payment_proof(update, context)
+            return ASK_PAYMENT_PROOF
         else:
             context.user_data['payment_type'] = 'cash'
             await ask_for_payment_proof(update, context)
@@ -442,6 +451,38 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         print(f"Unknown button data: {query.data}")  # Debug log
 
+async def handle_crm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    phone = update.message.text.strip()
+    if not is_valid_phone(phone):
+        await update.message.reply_text("❌ شماره وارد شده معتبر نیست. لطفاً شماره را به صورت صحیح وارد کنید.")
+        return ASK_PHONE
+
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["phone"] = phone
+
+    otp = str(random.randint(1000, 9999))
+    context.user_data["otp"] = otp
+
+    # ارسال OTP با Kavenegar
+    try:
+        api = KavenegarAPI(os.getenv("KAVENEGAR_API_KEY"))
+        api.verify_lookup({
+            "receptor": phone,
+            "token": otp,
+            "template": "verify",
+            "type": "sms"
+        })
+    except Exception as e:
+        await update.message.reply_text(f"خطا در ارسال پیامک: {e}")
+        return ConversationHandler.END
+
+    await update.message.reply_text("✅ کد تایید پیامک شد. لطفاً کد را وارد کنید:")
+    return ASK_OTP
+    
+
 async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle reply keyboard button presses"""
     if not update.message:
@@ -508,7 +549,7 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
         return await ask_name(update, context)
     elif user_input == "🎲 قرعه کشی":
         await lottery(update, context)
-    elif user_input == "📚 محصولات":
+    elif user_input == "📚 خرید محصولات با تخفیف ویژه نمایندگی 📚":
         await show_products_menu(update, context)
     elif user_input == "💡 راهنما":
         await help(update, context)
@@ -516,6 +557,20 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
         await contact(update, context)
     elif user_input == "🔙 بازگشت به منو":
         await start(update, context)
+    elif user_input == "💎 خرید قسطی اشتراک الماس 💎":
+        keyboard = [
+            ["پایه دوازدهم"],
+            ["پایه یازدهم"],
+            ["پایه دهم"],
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text(
+            "💎اشتراک الماس رو فقط از طریق نمایندگی تهران میتونی اقساطی تهیه کنی‼️\n\n🎯دسترسی کامل به خدمات ماز تا روز کنکور \n💰پرداخت چند مرحله ای بدون بهره \n🎉دسترسی به خدمات تکمیلی نمایندگی\n\n🔻برای ادامه پایه تحصیلی خودتو انتخاب کن", 
+            reply_markup=reply_markup
+        )
+    elif user_input == "💬 مشاوره تلفنی رایگان":
+        print("crm")
+        await handle_crm(update, context)
     else:
         await update.message.reply_text(
             "ببخشید نفهمیدم به چی نیاز داری! لطفا یکی از گزینه های منو رو انتخاب کنید."
@@ -531,16 +586,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          update.effective_user.last_name, update.effective_user.username)
     
     keyboard = [
-        ["👤 ثبت نام", "🎲 قرعه کشی"],
-        ["📚 محصولات", "💡 راهنما"],
-        ["💬 تماس با ما"]
+        ["💎 خرید قسطی اشتراک الماس 💎"],
+        ["📚 خرید محصولات با تخفیف ویژه نمایندگی 📚"],
+        ["💰 درآمد زایی و معرفی دوستان", "💬 مشاوره تلفنی رایگان"],
+        ["💳 اقساط من", "🎲 قرعه کشی"], 
+        ["👩‍💻 پشتیبانی", "🤝 همکاری با نمایندگی"],
+        ["👤 ثبت نام", "💡 راهنما"]
+
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text(
-        f"سلام *{update.effective_user.first_name}!* به ربات ما خوش اومدی\nبرای استفاده از ربات گزینه مورد نظر رو انتخاب کنید.",
+        f"سلام دوست خوبم👋\n🤖به ربات ماز خوش اومدی🤖\n\nمن اینجام تا مرحله به مرحله در خصوص تخفیف ها ، مشاوره و شرایط اقساطی نمایندگی ماز راهنماییت کنم🦾\n\n🔻از منوی زیر بخش مورد نظرت رو انتخاب کن تا به امکانات من دسترسی داشته باشی😉",
+  
         parse_mode="Markdown", 
         reply_markup=reply_markup
     )
+    context.user_data = {}
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command handler"""

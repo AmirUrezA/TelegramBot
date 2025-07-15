@@ -115,3 +115,11 @@ class File(Base):
     path = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     orders = relationship("Order", secondary="order_receipts", back_populates="receipts")
+
+class CRM(Base):
+    __tablename__ = "crm"
+
+    id = Column(Integer, primary_key=True)
+    number = Column(String, nullable=False)
+    called = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
