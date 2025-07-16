@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from db import engine, Base, AsyncSessionLocal
 import asyncio
-from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File, CRM
+from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File, CRM, order_receipts
 from sqlalchemy import select, insert
 from kavenegar import *
 import re
@@ -35,9 +35,14 @@ major_map = {
     "عمومی": MajorEnum.GENERAL,
 }
 
-(ASK_NAME, ASK_PHONE, ASK_OTP) = range(3)
+(ASK_NAME,ASK_AREA,ASK_ID, ASK_PHONE, ASK_OTP) = range(5)
 
 ASK_PAYMENT_METHOD, ASK_PAYMENT_PROOF = range(100, 102)
+
+# CRM conversation states
+ASK_CRM_PHONE, ASK_CRM_OTP = range(200, 202)
+
+ASK_RECEIPT_INSTALLMENT = range(300, 301)
 
 # Card number (static)
 CARD_NUMBER = "6037-9918-6186-2085"
@@ -66,12 +71,11 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_valid_persian_name(name):
         await update.message.reply_text("❌ لطفاً نام و نام خانوادگی را به‌درستی و به زبان فارسی وارد کنید.")
         return ASK_NAME
-    
     if context.user_data is None:
         context.user_data = {}
     context.user_data["full_name"] = name
-    await update.message.reply_text("📱 حالا شماره موبایل خود را وارد کنید (مثال: 09123456789):")
-    return ASK_PHONE
+    await update.message.reply_text("منطقه تحصیلی خود را به عدد وارد کنید(مثال: 1یا 2 یا 3)")
+    return ASK_AREA
 
 def is_valid_phone(number: str) -> bool:
     return bool(re.fullmatch(r"09\d{9}", number))
@@ -107,70 +111,60 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ کد تایید پیامک شد. لطفاً کد را وارد کنید:")
     return ASK_OTP
 
-async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.photo or not update.effective_user:
-        await update.message.reply_text("لطفاً یک عکس از فیش واریزی ارسال کنید.")
-        return ASK_PAYMENT_PROOF
 
-    photo = update.message.photo[-1]
-    file_id = photo.file_id
+def is_valid_area(area: str) -> bool:
+    if area == "1" or area == "2" or area == "3":
+        return True
+    else:
+        return False
 
-    # Download the photo to local storage
-    bot = context.bot
-    file = await bot.get_file(file_id)
-    file_path = f"receipts/receipt_{file_id}.jpg"
-    os.makedirs("receipts", exist_ok=True)
-    await file.download_to_drive(file_path)
+def is_valid_id(id: str) -> bool:
+    if len(id) == 10:
+        return True
+    else:
+        return False
 
-    async with AsyncSessionLocal() as session:
-        user_result = await session.execute(select(User).where(User.telegram_id == update.effective_user.id))
-        user = user_result.scalar_one_or_none()
-        if not user:
-            await update.message.reply_text("کاربر یافت نشد.")
-            return ConversationHandler.END
+async def handle_area(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    area = update.message.text.strip()
+    if not is_valid_area(area):
+        await update.message.reply_text("❌ منطقه وارد شده معتبر نیست. لطفاً منطقه را به صورت صحیح وارد کنید.")
+        return ASK_AREA
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["area"] = area
+    await update.message.reply_text("حالا کد ملی خود را وارد کنید(مثال: 1234567890)")
+    return ASK_ID
 
-        product = context.user_data.get("product_data")
-        referral = context.user_data.get("referral_data")
-        final_price = context.user_data.get("final_price")
-        installment = context.user_data.get("payment_type") == 'installment'
-        first_installment_amount = context.user_data.get("first_installment")
-
-        file_record = File(file_id=file_id, path=file_path)
-        session.add(file_record)
-        await session.flush()  # Get file.id before commit
-
-        order = Order(
-            user_id=user.id,
-            product_id=product.id,
-            status=OrderStatusEnum.PENDING,
-            discount=referral.discount if referral else context.user_data.get("discount", 0),
-            final_price=final_price,
-            installment=installment,
-            first_installment=datetime.now() if installment else None
-        )
-
-        session.add(order)
-        await session.flush()  # Get order.id before commit
-
-        await session.execute(insert(Order.__table__.metadata.tables['order_receipts']).values(order_id=order.id, file_id=file_record.id))
-        await session.commit()
-
-    await update.message.reply_text("✅ سفارش شما ثبت شد. بسته شما تا ساعاتی دیگر ارسال خواهد شد.")
-    return ConversationHandler.END
+async def handle_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    id = update.message.text.strip()
+    if not is_valid_id(id):
+        await update.message.reply_text("❌ کد ملی وارد شده معتبر نیست. لطفاً کد ملی را به صورت صحیح وارد کنید.")
+        return ASK_ID
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["id"] = id
+    await update.message.reply_text("حالا شماره موبایل خود را وارد کنید(مثال: 09123456789)")
+    return ASK_PHONE
 
 async def handle_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text or not update.effective_user:
         return
     code = update.message.text.strip()
     if context.user_data is None or code != context.user_data.get("otp"):
-        await update.message.reply_text("❌ کد وارد شده صحیح نیست. دوباره تلاش کنید:")
-        return ASK_OTP
+        await update.message.reply_text("❌ کد وارد شده صحیح نیست. لطفا فرآیند ثبت نام را از اول انجام دهید دوباره تلاش کنید:")
+        await cancel(update, context)
+        return ConversationHandler.END
 
     full_name = context.user_data["full_name"]
     phone = context.user_data["phone"]
     telegram_id = update.effective_user.id
     username = update.effective_user.username or ""
-
+    area = context.user_data["area"]
+    id = context.user_data["id"]
     async with AsyncSessionLocal() as session:
         user_result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = user_result.scalar_one_or_none()
@@ -180,11 +174,15 @@ async def handle_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
             setattr(user, 'approved', True)
             setattr(user, 'number', phone)
             setattr(user, 'username', username)
+            setattr(user, 'area', area)
+            setattr(user, 'id_number', id)
         else:
             user = User(
                 telegram_id=telegram_id,
                 username=username,
                 number=phone,
+                area=area,
+                id_number=id,
                 approved=True
             )
             session.add(user)
@@ -269,6 +267,8 @@ async def handle_referral_code_input(update: Update, context: ContextTypes.DEFAU
             context.user_data['waiting_for_referral_code'] = True
         return
     elif user_input == "کد معرف ندارم(تخفیف پیشفرض ربات)":
+        if context.user_data is None:
+            context.user_data = {}
         context.user_data['waiting_for_referral_code'] = False
         await process_order_without_referral(update, context)
         return
@@ -303,14 +303,14 @@ async def process_order_with_referral(update: Update, context: ContextTypes.DEFA
         context.user_data['product_data'] = product
 
         # Check if user can choose installment
-        if product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12] and referral.product == ReferralCodeProductEnum.ALMAS and referral.installment:
+        if product and product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12] and referral.product == ReferralCodeProductEnum.ALMAS and referral.installment:
             keyboard = ReplyKeyboardMarkup([
                 ["پرداخت قسطی"],
                 ["پرداخت نقدی"]
             ], resize_keyboard=True, one_time_keyboard=True)
             await update.message.reply_text("نوع پرداخت خود را انتخاب کنید:", reply_markup=keyboard)
             return ASK_PAYMENT_METHOD
-        elif product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12] and referral.product == ReferralCodeProductEnum.ALMAS and not referral.installment:
+        elif product and product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12] and referral.product == ReferralCodeProductEnum.ALMAS and not referral.installment:
             keyboard = ReplyKeyboardMarkup([
                 ["پرداخت نقدی"],
                 ["🔙 بازگشت به منو"]
@@ -341,7 +341,7 @@ async def process_order_without_referral(update: Update, context: ContextTypes.D
 
 
         # Check if installment is allowed
-        if product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12]:
+        if product and product.grade in [GradeEnum.GRADE_10, GradeEnum.GRADE_11, GradeEnum.GRADE_12]:
             keyboard = ReplyKeyboardMarkup([
                 ["پرداخت قسطی"],
                 ["پرداخت نقدی"]
@@ -423,48 +423,22 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE, grad
             reply_markup=reply_markup
         )
 
-async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle inline keyboard button presses"""
-    if not update.callback_query:
-        return
-    
-    query = update.callback_query
-    await query.answer()
-    
-    print(f"Button clicked: {query.data}")  # Debug log
-    
-    if query.data and query.data.startswith("buy_"):
-        try:
-            product_id = int(query.data.split("_")[1])
-            print(f"Processing buy for product ID: {product_id}")  # Debug log
-            
-            # Call the buy_product function
-            await buy_product(update, context, product_id)
-            
-        except (ValueError, IndexError) as e:
-            print(f"Error parsing product ID: {e}")
-            await query.edit_message_text("خطا در پردازش درخواست خرید")
-    elif query.data == "back_to_menu":
-        await start(update, context)
-    elif query.data == "authorize":
-        return await ask_name(update, context)
-    else:
-        print(f"Unknown button data: {query.data}")  # Debug log
-
-async def handle_crm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_crm_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle CRM phone number input"""
     if not update.message or not update.message.text:
         return
+    
     phone = update.message.text.strip()
     if not is_valid_phone(phone):
         await update.message.reply_text("❌ شماره وارد شده معتبر نیست. لطفاً شماره را به صورت صحیح وارد کنید.")
-        return ASK_PHONE
+        return ASK_CRM_PHONE
 
     if context.user_data is None:
         context.user_data = {}
-    context.user_data["phone"] = phone
+    context.user_data["crm_phone"] = phone
 
     otp = str(random.randint(1000, 9999))
-    context.user_data["otp"] = otp
+    context.user_data["crm_otp"] = otp
 
     # ارسال OTP با Kavenegar
     try:
@@ -480,8 +454,41 @@ async def handle_crm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     await update.message.reply_text("✅ کد تایید پیامک شد. لطفاً کد را وارد کنید:")
-    return ASK_OTP
+    return ASK_CRM_OTP
+
+async def handle_crm_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle CRM OTP verification and save to CRM model"""
+    if not update.message or not update.message.text or not update.effective_user:
+        return
     
+    code = update.message.text.strip()
+    if context.user_data is None or code != context.user_data.get("crm_otp"):
+        await update.message.reply_text("❌ کد وارد شده صحیح نیست. دوباره تلاش کنید:")
+        return ASK_CRM_OTP
+
+    phone = context.user_data["crm_phone"]
+    telegram_id = update.effective_user.id
+
+    async with AsyncSessionLocal() as session:
+        # Check if this phone number already exists in CRM
+        existing_crm = await session.execute(select(CRM).where(CRM.number == phone))
+        crm_record = existing_crm.scalar_one_or_none()
+
+        if crm_record:
+            # Update existing record - use setattr to avoid type checking issues
+            setattr(crm_record, 'called', False)  # Reset called status for new request
+        else:
+            # Create new CRM record
+            crm_record = CRM(
+                number=phone,
+                called=False
+            )
+            session.add(crm_record)
+
+        await session.commit()
+
+    await update.message.reply_text("✅ اطلاعات شما با موفقیت ثبت شد! مشاوران ما در اسرع وقت با شما تماس خواهند گرفت.")
+    return ConversationHandler.END
 
 async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle reply keyboard button presses"""
@@ -568,9 +575,11 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
             "💎اشتراک الماس رو فقط از طریق نمایندگی تهران میتونی اقساطی تهیه کنی‼️\n\n🎯دسترسی کامل به خدمات ماز تا روز کنکور \n💰پرداخت چند مرحله ای بدون بهره \n🎉دسترسی به خدمات تکمیلی نمایندگی\n\n🔻برای ادامه پایه تحصیلی خودتو انتخاب کن", 
             reply_markup=reply_markup
         )
+    elif user_input == "💳 اقساط من":
+        await my_installment(update, context)
     elif user_input == "💬 مشاوره تلفنی رایگان":
         print("crm")
-        await handle_crm(update, context)
+        await handle_crm_phone(update, context)
     else:
         await update.message.reply_text(
             "ببخشید نفهمیدم به چی نیاز داری! لطفا یکی از گزینه های منو رو انتخاب کنید."
@@ -581,10 +590,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
     if not update.effective_user or not update.message:
         return
-    
-    print(update.effective_user.id, update.effective_user.first_name, 
-         update.effective_user.last_name, update.effective_user.username)
-    
+    context.user_data.clear()
     keyboard = [
         ["💎 خرید قسطی اشتراک الماس 💎"],
         ["📚 خرید محصولات با تخفیف ویژه نمایندگی 📚"],
@@ -601,7 +607,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown", 
         reply_markup=reply_markup
     )
-    context.user_data = {}
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command handler"""
@@ -672,6 +677,265 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """Error handler"""
     logging.error(f"Update {update} caused error: {context.error}")
 
+async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.photo or not update.effective_user:
+        await update.message.reply_text("لطفاً یک عکس از فیش واریزی ارسال کنید.")
+        return ASK_PAYMENT_PROOF
+
+    # ابتدا عکس را ذخیره کن
+    photo = update.message.photo[-1]
+    file_id = photo.file_id
+
+    bot = context.bot
+    file = await bot.get_file(file_id)
+    file_path = f"receipts/receipt_{file_id}.jpg"
+    os.makedirs("receipts", exist_ok=True)
+    await file.download_to_drive(file_path)
+
+    # حالا بررسی کن که آیا برای آپلود قسط خاص هست یا سفارش جدید
+    if "upload_order_id" in context.user_data and "upload_installment_index" in context.user_data:
+        order_id = context.user_data["upload_order_id"]
+        installment_index = context.user_data["upload_installment_index"]
+        del context.user_data["upload_order_id"]
+        del context.user_data["upload_installment_index"]
+
+        async with AsyncSessionLocal() as session:
+            order = await session.get(Order, order_id)
+            if not order:
+                await update.message.reply_text("سفارش یافت نشد.")
+                return ConversationHandler.END
+
+            file_record = File(file_id=file_id, path=file_path)
+            session.add(file_record)
+            await session.flush()
+            await session.execute(insert(order_receipts).values(order_id=order.id, file_id=file_record.id))
+
+            now = datetime.now()
+            if installment_index == 1:
+                order.first_installment = now
+            elif installment_index == 2:
+                order.second_installment = now
+            elif installment_index == 3:
+                order.third_installment = now
+
+            await session.commit()
+            await update.message.reply_text(f"✅ رسید قسط {installment_index} با موفقیت ثبت شد.")
+        return ConversationHandler.END
+
+    # حالت عادی خرید اولیه
+    async with AsyncSessionLocal() as session:
+        user_result = await session.execute(select(User).where(User.telegram_id == update.effective_user.id))
+        user = user_result.scalar_one_or_none()
+        if not user:
+            await update.message.reply_text("کاربر یافت نشد.")
+            return ConversationHandler.END
+
+        product = context.user_data.get("product_data")
+        referral = context.user_data.get("referral_data")
+        final_price = context.user_data.get("final_price")
+        installment = context.user_data.get("payment_type") == 'installment'
+
+        file_record = File(file_id=file_id, path=file_path)
+        session.add(file_record)
+        await session.flush()
+
+        order = Order(
+            user_id=user.id,
+            product_id=product.id,
+            status=OrderStatusEnum.PENDING,
+            discount=referral.discount if referral else context.user_data.get("discount", 0),
+            final_price=final_price,
+            installment=installment,
+            first_installment=datetime.now() if installment else None
+        )
+        session.add(order)
+        await session.flush()
+
+        await session.execute(insert(order_receipts).values(order_id=order.id, file_id=file_record.id))
+        await session.commit()
+
+    await update.message.reply_text("✅ سفارش شما ثبت شد. بسته شما تا ساعاتی دیگر ارسال خواهد شد.")
+    return ConversationHandler.END
+
+async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline keyboard button presses"""
+    if not update.callback_query:
+        return
+    
+    query = update.callback_query
+    await query.answer()
+    
+    print(f"Button clicked: {query.data}")  # Debug log
+    
+    if query.data and query.data.startswith("buy_"):
+        try:
+            product_id = int(query.data.split("_")[1])
+            print(f"Processing buy for product ID: {product_id}")  # Debug log
+            
+            # Call the buy_product function
+            await buy_product(update, context, product_id)
+            
+        except (ValueError, IndexError) as e:
+            print(f"Error parsing product ID: {e}")
+            await query.edit_message_text("خطا در پردازش درخواست خرید")
+    elif query.data == "back_to_menu":
+        await start(update, context)
+    elif query.data == "authorize":
+        return await ask_name(update, context)
+    elif query.data and query.data.startswith("my_installment_"):
+        # Handle my installment callbacks
+        try:
+            order_id = int(query.data.split("_")[2])
+            await handle_my_installment(update, context)
+        except (IndexError, ValueError):
+            await query.edit_message_text("خطا در خواندن اطلاعات سفارش.")
+    elif query.data and query.data.startswith("installment_"):
+        # Handle single installment callbacks
+        await handle_single_installment(update, context)
+    else:
+        print(f"Unknown button data: {query.data}")  # Debug log
+
+async def ask_crm_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start CRM phone collection process"""
+    if not update.message:
+        return
+    
+    await update.message.reply_text("📱 لطفاً شماره موبایل خود را برای مشاوره تلفنی رایگان وارد کنید (مثال: 09123456789):")
+    return ASK_CRM_PHONE
+
+async def handle_upload_receipt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        print(f"Query data: {query.data}")
+        salam , _, order_id, index = query.data.split("_")
+        context.user_data["upload_order_id"] = int(order_id)
+        context.user_data["upload_installment_index"] = int(index)
+        await query.edit_message_text(f"📸 لطفاً رسید قسط {index} را ارسال کنید.")
+        return ASK_RECEIPT_INSTALLMENT
+    except Exception as e:
+        print(f"Error in handle_upload_receipt_callback: {e}")
+        await query.edit_message_text("❌ خطا در پردازش درخواست.")
+        return ConversationHandler.END
+
+async def my_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+    
+    async with AsyncSessionLocal() as session:
+        # گرفتن اطلاعات کاربر از دیتابیس
+        user_result = await session.execute(
+            select(User).where(User.telegram_id == update.effective_user.id)
+        )
+        user = user_result.scalar_one_or_none()
+        if not user:
+            await update.message.reply_text("ابتدا باید ثبت‌نام کنید.")
+            return
+
+        result = await session.execute(
+            select(Order).where(Order.user_id == user.id, Order.installment == True)
+        )
+        orders = result.scalars().all()
+        if not orders:
+            await update.message.reply_text("شما هیچ خرید قسطی ثبت نکرده‌اید.")
+            return
+
+        # Fetch product information for each order
+        keyboard = []
+        for order in orders:
+            product_result = await session.execute(select(Product).where(Product.id == order.product_id))
+            product = product_result.scalar_one_or_none()
+            if product:
+                keyboard.append([InlineKeyboardButton(product.name, callback_data=f"my_installment_{order.id}")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("🔻 یک محصول را انتخاب کنید تا اقساط آن را ببینید:", reply_markup=reply_markup)
+
+async def handle_my_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.callback_query:
+        return
+
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        order_id = int(query.data.split("_")[2])
+    except (IndexError, ValueError):
+        await query.edit_message_text("خطا در خواندن اطلاعات سفارش.")
+        return
+
+    async with AsyncSessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if not order:
+            await query.edit_message_text("سفارش مورد نظر یافت نشد.")
+            return
+
+        # گرفتن اطلاعات محصول
+        product = await session.get(Product, order.product_id)
+        if not product:
+            await query.edit_message_text("محصول یافت نشد.")
+            return
+
+        installment_amount = order.final_price // 3
+        message = f"💎 سفارش: {product.name}\n💰 قیمت کل: {order.final_price:,} تومان\n📆 تعداد اقساط: 3\n💵 مبلغ هر قسط: {installment_amount:,} تومان\n\n"
+
+        # بررسی وضعیت اقساط
+        keyboard = []
+        installments = [order.first_installment, order.second_installment, order.third_installment]
+        for i, inst_date in enumerate(installments):
+            index = i + 1
+            if inst_date:
+                status = f"✅ پرداخت شده در {inst_date.strftime('%Y/%m/%d')}"
+                keyboard.append([InlineKeyboardButton(f"🧾 قسط {index} - {status}", callback_data="ignore")])
+            else:
+                keyboard.append([InlineKeyboardButton(f"🧾 قسط {index} - پرداخت نشده ❌", callback_data=f"upload_receipt_{order.id}_{index}")])
+
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به منو", callback_data="back_to_menu")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+async def handle_single_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.callback_query:
+        return
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        _, order_id, index = query.data.split("_")
+        order_id = int(order_id)
+        index = int(index)
+    except Exception:
+        await query.edit_message_text("خطا در پردازش قسط.")
+        return
+
+    async with AsyncSessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if not order:
+            await query.edit_message_text("سفارش پیدا نشد.")
+            return
+
+        # بررسی رسیدها
+        paid = False
+        if order.receipts:
+            paid = True  # در حالت واقعی باید زمان و شماره قسط را بررسی کنیم
+
+        # Fetch product information
+        product_result = await session.execute(select(Product).where(Product.id == order.product_id))
+        product = product_result.scalar_one_or_none()
+        if not product:
+            await query.edit_message_text("محصول مورد نظر یافت نشد.")
+            return
+            
+        installment_amount = order.final_price // 3
+        status = "پرداخت شده ✅" if paid else "پرداخت نشده ❌"
+        message = (
+            f"📦 محصول: {product.name}\n"
+            f"🧾 قسط {index} از 3\n"
+            f"💰 مبلغ: {installment_amount:,} تومان\n"
+            f"📌 وضعیت: {status}"
+        )
+        await query.edit_message_text(message)
+
 async def init_db():
     """Initialize database"""
     async with engine.begin() as conn:
@@ -685,26 +949,43 @@ if __name__ == '__main__':
     entry_points=[MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name)],
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
+        ASK_AREA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_area)],
+        ASK_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_id)],
         ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
         ASK_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_otp)],
     },
     fallbacks=[CommandHandler("cancel", cancel)],
     ))
+    # Remove the problematic conversation handler for buy_product since it has extra parameters
     app.add_handler(ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^(🛒 خرید)$"), buy_product)],
+    entry_points=[MessageHandler(filters.Regex("^(💬 مشاوره تلفنی رایگان)$"), ask_crm_phone)],
     states={
-        ASK_PAYMENT_METHOD: [MessageHandler(filters.TEXT, handle_payment_method)],
-        ASK_PAYMENT_PROOF: [MessageHandler(filters.PHOTO, handle_payment_proof)],
-    },    
+        ASK_CRM_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_phone)],
+        ASK_CRM_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_otp)],
+    },
     fallbacks=[CommandHandler("cancel", cancel)],
     ))
+    app.add_handler(ConversationHandler(
+    entry_points=[
+        CallbackQueryHandler(handle_upload_receipt_callback, pattern="^upload_receipt_")
+    ],
+    states={
+        ASK_RECEIPT_INSTALLMENT: [
+            MessageHandler(filters.PHOTO, handle_payment_proof)
+        ]
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+    per_message=True,
+    ))
+
+    app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("products", products))   
-    app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(MessageHandler(filters.Regex("^(پرداخت نقدی|پرداخت قسطی)$"), handle_payment_method))
     app.add_handler(MessageHandler(filters.PHOTO, handle_payment_proof))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard_button))
+    # Installment handlers are now handled in the general handle_button function
     app.add_error_handler(error_handler)
 
     

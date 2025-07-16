@@ -63,6 +63,8 @@ class User(Base):
     telegram_id = Column(Integer, nullable=False, unique=True)
     username = Column(String, nullable=False, unique=False)
     number = Column(String, nullable=False, unique=True)
+    area = Column(Integer, nullable=False)
+    id_number = Column(String, nullable=False)
     approved = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
     approved_at = Column(DateTime, default=datetime.now)
