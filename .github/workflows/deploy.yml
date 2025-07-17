@@ -33,7 +33,9 @@ jobs:
 
     - name: Create deployment package
       run: |
-        tar -czf deployment.tar.gz --exclude='.git' --exclude='__pycache__' --exclude='.venv' .
+        mkdir temp_package
+        rsync -av --exclude='.git' --exclude='__pycache__' --exclude='.venv' ./ temp_package/
+        tar -czf deployment.tar.gz -C temp_package .
 
     - name: Copy code to VPS via SSH
       uses: appleboy/scp-action@v0.1.7
@@ -42,7 +44,7 @@ jobs:
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.VPS_SSH_KEY }}
         source: "deployment.tar.gz"
-        target: "~/bot-project"
+        target: "~/TelegramBot"
         strip_components: 0
 
     - name: SSH and deploy
@@ -55,7 +57,7 @@ jobs:
           set -e
           
           # Navigate to project directory
-          cd ~/bot-project
+          cd ~/TelegramBot
           
           # Extract deployment package
           tar -xzf deployment.tar.gz
@@ -93,6 +95,6 @@ jobs:
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.VPS_SSH_KEY }}
         script: |
-          cd ~/bot-project
+          cd ~/TelegramBot
           docker compose ps
           docker compose logs --tail=20 bot
