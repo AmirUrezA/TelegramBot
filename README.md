@@ -1,5 +1,3 @@
-check ci/cd3
-
 # Telegram Bot with Referral Code System
 
 This is a Telegram bot for selling educational products with a referral code system that provides discounts to customers.
