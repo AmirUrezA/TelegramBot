@@ -2,7 +2,7 @@ name: Deploy Bot to VPS
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 jobs:
