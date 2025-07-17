@@ -1,10 +1,11 @@
 from random import choice
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table
 from datetime import date, datetime
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.types import Enum as SqlEnum
 from enum import Enum
-from db import Base
+
+Base = declarative_base()
 
 class GradeEnum(Enum):
     GRADE_5 = 5

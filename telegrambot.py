@@ -111,7 +111,6 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ کد تایید پیامک شد. لطفاً کد را وارد کنید:")
     return ASK_OTP
 
-
 def is_valid_area(area: str) -> bool:
     if area == "1" or area == "2" or area == "3":
         return True

@@ -1,0 +1,98 @@
+name: Deploy Bot to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests (if any)
+      run: |
+        echo "Running basic syntax check..."
+        python -m py_compile telegrambot.py
+        python -m py_compile models.py
+        python -m py_compile db.py
+
+    - name: Create deployment package
+      run: |
+        tar -czf deployment.tar.gz --exclude='.git' --exclude='__pycache__' --exclude='.venv' .
+
+    - name: Copy code to VPS via SSH
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        source: "deployment.tar.gz"
+        target: "~/bot-project"
+        strip_components: 0
+
+    - name: SSH and deploy
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        script: |
+          set -e
+          
+          # Navigate to project directory
+          cd ~/bot-project
+          
+          # Extract deployment package
+          tar -xzf deployment.tar.gz
+          rm deployment.tar.gz
+          
+          # Create backup of current deployment
+          if [ -d "current" ]; then
+            cp -r current backup_$(date +%Y%m%d_%H%M%S)
+          fi
+          
+          # Stop current containers
+          docker compose down || true
+          
+          # Build and start new containers
+          docker compose up -d --build
+          
+          # Wait for services to be healthy
+          echo "Waiting for services to be ready..."
+          timeout 60 bash -c 'until docker compose ps | grep -q "healthy"; do sleep 5; done' || {
+            echo "Services failed to start properly"
+            docker compose logs
+            exit 1
+          }
+          
+          # Clean up old backups (keep last 3)
+          ls -t backup_* | tail -n +4 | xargs -r rm -rf
+          
+          echo "Deployment completed successfully!"
+
+    - name: Verify deployment
+      uses: appleboy/ssh-action@v1.0.3
+      if: always()
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        script: |
+          cd ~/bot-project
+          docker compose ps
+          docker compose logs --tail=20 bot
