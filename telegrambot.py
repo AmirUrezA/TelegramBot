@@ -75,6 +75,10 @@ async def handle_menu_command_in_conversation(update: Update, context: ContextTy
     
     text = update.message.text.strip()
     
+    # Force clear conversation data
+    if context.user_data is not None:
+        context.user_data.clear()
+    
     # End the current conversation
     if text == "🔙 بازگشت به منو":
         await start(update, context)
@@ -343,7 +347,7 @@ async def handle_referral_code_input(update: Update, context: ContextTypes.DEFAU
         return
     elif user_input == "کد معرف ندارم(تخفیف پیشفرض ربات)":
         if context.user_data is None:
-            context.user_data = {}
+            context.user_data.clear()
         context.user_data['waiting_for_referral_code'] = False
         await process_order_without_referral(update, context)
         return
@@ -404,7 +408,7 @@ async def process_order_without_referral(update: Update, context: ContextTypes.D
 
     async with AsyncSessionLocal() as session:
         if context.user_data is None:
-            context.user_data = {}
+            context.user_data.clear()
 
         product_id = context.user_data.get('current_product_id')
         product = await session.get(Product, product_id)
@@ -679,6 +683,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Clear any ongoing conversation data
+    if context.user_data is not None:
+        context.user_data.clear()
+    
+    # Force end any active conversations by clearing user data
     if context.user_data is not None:
         context.user_data.clear()
     
@@ -1094,7 +1102,7 @@ if __name__ == '__main__':
         ]
     },
     fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
-    per_message=True,
+    per_chat=True,
     ))
 
     # Add conversation handler for payment process
