@@ -60,11 +60,7 @@ def is_menu_command(text: str) -> bool:
         "💳 اقساط من",
         "💬 مشاوره تلفنی رایگان",
         "👩‍💻 پشتیبانی",
-        "🤝 همکاری با نمایندگی",
-        "پایه پنجم", "پایه ششم", "پایه هفتم", "پایه هشتم", "پایه نهم", "پایه دهم", "پایه یازدهم", "پایه دوازدهم",
-        "ریاضی", "تجربی", "انسانی", "عمومی",
-        "کد معرف دارم", "کد معرف ندارم(تخفیف پیشفرض ربات)",
-        "پرداخت نقدی", "پرداخت قسطی"
+        "🤝 همکاری با نمایندگی"
     ]
     return text in menu_commands
 
@@ -587,6 +583,9 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
     
     # Check if this is a menu command that should end conversations
     if user_input and is_menu_command(user_input):
+        # Clear any conversation data first
+        if context.user_data is not None:
+            context.user_data.clear()
         await handle_menu_command_in_conversation(update, context)
         return
     
@@ -1091,6 +1090,7 @@ if __name__ == '__main__':
         ASK_CRM_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_otp)],
     },
     fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+    per_chat=True,
     ))
     app.add_handler(ConversationHandler(
     entry_points=[
