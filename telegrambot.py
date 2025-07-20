@@ -509,13 +509,13 @@ async def ask_for_payment_proof(update: Update, context: ContextTypes.DEFAULT_TY
     installment = context.user_data.get('payment_type') == 'installment'
 
     if installment:
-        first_payment = final_price // 3
+        first_payment = final_price // 2
         msg = f"💳 مبلغ قسط اول: {first_payment:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER}\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید."
     else:
         msg = f"💳 مبلغ قابل پرداخت: {final_price:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER}\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید."
 
     context.user_data['final_price'] = final_price
-    context.user_data['first_installment'] = final_price // 3 if installment else final_price
+    context.user_data['first_installment'] = final_price // 2 if installment else final_price
 
     await update.message.reply_text(msg, reply_markup=ReplyKeyboardRemove())
     return ASK_PAYMENT_PROOF
