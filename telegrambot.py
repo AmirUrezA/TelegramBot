@@ -183,6 +183,10 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     phone = update.message.text.strip()
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    phone = phone.translate(trans_table)
     if not is_valid_phone(phone):
         await update.message.reply_text("❌ شماره وارد شده معتبر نیست. لطفاً شماره را به صورت صحیح وارد کنید.")
         return ASK_PHONE
@@ -226,6 +230,12 @@ async def handle_area(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     area = update.message.text.strip()
+    if area == "۱":
+        area = "1"
+    elif area == "۲":
+        area = "2"
+    elif area == "۳":
+        area = "3"
     if not is_valid_area(area):
         await update.message.reply_text("❌ منطقه وارد شده معتبر نیست. لطفاً منطقه را به صورت صحیح وارد کنید.")
         return ASK_AREA
@@ -239,6 +249,10 @@ async def handle_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     id = update.message.text.strip()
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    id = id.translate(trans_table)
     if not is_valid_id(id):
         await update.message.reply_text("❌ کد ملی وارد شده معتبر نیست. لطفاً کد ملی را به صورت صحیح وارد کنید.")
         return ASK_ID
