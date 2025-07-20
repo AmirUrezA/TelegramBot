@@ -917,9 +917,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     elif query.data == "authorize":
-        await query.answer()
-        await query.edit_message_text("👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:\nانصراف : /cancel")
-        return ASK_NAME
+        return await ask_name(update, context)
     elif query.data and query.data.startswith("my_installment_"):
         # Handle my installment callbacks
         try:
