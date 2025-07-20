@@ -134,7 +134,7 @@ async def ask_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["تهران"],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-    await update.message.reply_text("👤 لطفاً شهر خود را انتخاب کنید:", reply_markup=reply_markup)
+    await update.message.reply_text("👤 لطفاً شهر خود را انتخاب کنید:\n انصراف : /cancel", reply_markup=reply_markup)
     return ASK_CITY
 
 async def handle_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -160,7 +160,7 @@ async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user and user.approved is True:
             await update.message.reply_text("شما قبلاً ثبت‌نام کردید ✅")
             return ConversationHandler.END
-    await update.message.reply_text("👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:")
+    await update.message.reply_text("👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:\nانصراف : /cancel")
     return ASK_NAME
 
 async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -897,43 +897,29 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    print(f"Button clicked: {query.data}")  # Debug log
+    print(f"Button clicked: {query.data}")
     
     if query.data and query.data.startswith("buy_"):
         try:
             product_id = int(query.data.split("_")[1])
-            print(f"Processing buy for product ID: {product_id}")  # Debug log
-            
-            # Call the buy_product function
+            print(f"Processing buy for product ID: {product_id}")
             await buy_product(update, context, product_id)
             
         except (ValueError, IndexError) as e:
             print(f"Error parsing product ID: {e}")
             await query.edit_message_text("خطا در پردازش درخواست خرید")
     elif query.data == "back_to_menu":
-        # Clear any ongoing conversation data
         if context.user_data is not None:
             context.user_data.clear()
         
-        # For inline buttons, we can't use ReplyKeyboardMarkup, so we'll just show the message
         await query.edit_message_text(
             f"سلام دوست خوبم👋\n🤖به ربات ماز خوش اومدی🤖\n\nمن اینجام تا مرحله به مرحله در خصوص تخفیف ها ، مشاوره و شرایط اقساطی نمایندگی ماز راهنماییت کنم🦾\n\n/start رو برای دیدن منو بزنید",
             parse_mode="Markdown"
         )
     elif query.data == "authorize":
-        # Start registration process from callback query
         await query.answer()
-        await query.edit_message_text("👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:")
-        # Send a new message to start the conversation
-        await context.bot.send_message(
-            chat_id=query.from_user.id,
-            text="👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:"
-        )
-        # Trigger the conversation by sending the registration command
-        await context.bot.send_message(
-            chat_id=query.from_user.id,
-            text="👤 ثبت نام"
-        )
+        await query.edit_message_text("👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:\nانصراف : /cancel")
+        return ASK_NAME
     elif query.data and query.data.startswith("my_installment_"):
         # Handle my installment callbacks
         try:
@@ -954,7 +940,7 @@ async def ask_crm_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
     
-    await update.message.reply_text("📱 لطفاً شماره موبایل خود را برای مشاوره تلفنی رایگان وارد کنید (مثال: 09123456789):")
+    await update.message.reply_text("📱 لطفاً شماره موبایل خود را برای مشاوره تلفنی رایگان وارد کنید (مثال: 09123456789):\nانصراف : /cancel")
     return ASK_CRM_PHONE
 
 async def handle_upload_receipt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
