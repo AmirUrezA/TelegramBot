@@ -266,6 +266,10 @@ async def handle_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text or not update.effective_user:
         return
     code = update.message.text.strip()
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    code = code.translate(trans_table)
     if context.user_data is None or code != context.user_data.get("otp"):
         await update.message.reply_text("❌ کد وارد شده صحیح نیست. لطفا فرآیند ثبت نام را از اول انجام دهید دوباره تلاش کنید:")
         await cancel(update, context)
@@ -550,6 +554,10 @@ async def handle_crm_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     phone = update.message.text.strip()
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    phone = phone.translate(trans_table)
     if not is_valid_phone(phone):
         await update.message.reply_text("❌ شماره وارد شده معتبر نیست. لطفاً شماره را به صورت صحیح وارد کنید.")
         return ASK_CRM_PHONE
@@ -583,6 +591,10 @@ async def handle_crm_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     code = update.message.text.strip()
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    code = code.translate(trans_table)
     if context.user_data is None or code != context.user_data.get("crm_otp"):
         await update.message.reply_text("❌ کد وارد شده صحیح نیست. دوباره تلاش کنید:")
         return ASK_CRM_OTP
