@@ -918,9 +918,8 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif query.data == "authorize":
         await query.answer()
-        await query.edit_message_text("👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:\nانصراف : /cancel")
-        await ask_name(update, context)
-        return ASK_NAME
+        # The conversation handler will handle this automatically
+        # No need to do anything else here
     elif query.data and query.data.startswith("my_installment_"):
         # Handle my installment callbacks
         try:
@@ -1097,7 +1096,10 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(str(BOT_TOKEN)).build()
     
     app.add_handler(ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name)],
+    entry_points=[
+        MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name),
+        CallbackQueryHandler(lambda u, c: ask_name(u, c), pattern="^authorize$")
+    ],
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
         ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city)],
