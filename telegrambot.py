@@ -960,9 +960,25 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data and query.data.startswith("installment_"):
         await handle_single_installment(update, context)
     elif query.data == "not_sure":
-        return await help(update, context)
+        await query.answer()
     else:
         print(f"Unknown button data: {query.data}")
+
+async def handle_not_sure_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.callback_query:
+        return ConversationHandler.END
+    
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text("👈بهت پیشنهاد میکنم برای راهنمایی کامل تر و رفع ابهامات با مشاورین مجموعه ما در ارتباط باشی🌹\n\nکافیه شماره تماست رو برامون ارسال کنی تا در اولین فرصت باهات تماس بگیریم☎️")
+    
+    await context.bot.send_message(
+        chat_id=query.from_user.id,
+        text="📱 لطفاً شماره موبایل خود را برای مشاوره تلفنی رایگان وارد کنید (مثال: 09123456789):\nانصراف : /cancel"
+    )
+    
+    return ASK_CRM_PHONE
 
 async def ask_crm_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -1134,7 +1150,9 @@ if __name__ == '__main__':
     ))
     
     app.add_handler(ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^(💬 مشاوره تلفنی رایگان)$"), ask_crm_phone)],
+    entry_points=[
+                    MessageHandler(filters.Regex("^(💬 مشاوره تلفنی رایگان)$"), ask_crm_phone),
+                    CallbackQueryHandler(handle_not_sure_callback, pattern="^not_sure$")],
     states={
         ASK_CRM_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_phone)],
         ASK_CRM_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_otp)],
