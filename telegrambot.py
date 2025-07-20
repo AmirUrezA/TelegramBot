@@ -238,7 +238,7 @@ async def handle_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = context.user_data["phone"]
     telegram_id = update.effective_user.id
     username = update.effective_user.username or ""
-    area = context.user_data["area"]
+    area = int(context.user_data["area"])  # Convert string to integer
     id = context.user_data["id"]
     async with AsyncSessionLocal() as session:
         user_result = await session.execute(select(User).where(User.telegram_id == telegram_id))
