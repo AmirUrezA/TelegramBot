@@ -35,7 +35,7 @@ major_map = {
     "عمومی": MajorEnum.GENERAL,
 }
 
-(ASK_NAME,ASK_AREA,ASK_ID, ASK_PHONE, ASK_OTP) = range(5)
+(ASK_NAME,ASK_CITY, ASK_AREA,ASK_ID, ASK_PHONE, ASK_OTP) = range(6)
 
 ASK_PAYMENT_METHOD, ASK_PAYMENT_PROOF = range(100, 102)
 
@@ -127,6 +127,29 @@ def is_valid_persian_name(name: str) -> bool:
     # فقط حروف فارسی، بین 2 تا 5 کلمه
     return bool(re.fullmatch(r"[آ-ی\s]{5,50}", name.strip()))
 
+async def ask_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.effective_user:
+        return
+    keyboard = [
+        ["تهران"],
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    await update.message.reply_text("👤 لطفاً شهر خود را انتخاب کنید:", reply_markup=reply_markup)
+    return ASK_CITY
+
+async def handle_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    city = update.message.text.strip()
+    if city != "تهران":
+        await update.message.reply_text("❌ شهر وارد شده معتبر نیست. لطفاً شهر را به صورت صحیح وارد کنید.")
+        return ASK_CITY
+    if context.user_data is None:
+        context.user_data.clear()
+    context.user_data["city"] = city
+    await update.message.reply_text("منطقه تحصیلی خود را به عدد وارد کنید(مثال: 1یا 2 یا 3)")
+    return ASK_AREA
+
 async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
         return
@@ -148,10 +171,10 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ لطفاً نام و نام خانوادگی را به‌درستی و به زبان فارسی وارد کنید.")
         return ASK_NAME
     if context.user_data is None:
-        context.user_data = {}
+        context.user_data.clear()
     context.user_data["full_name"] = name
-    await update.message.reply_text("منطقه تحصیلی خود را به عدد وارد کنید(مثال: 1یا 2 یا 3)")
-    return ASK_AREA
+    await ask_city(update, context)
+    return ASK_CITY
 
 def is_valid_phone(number: str) -> bool:
     return bool(re.fullmatch(r"09\d{9}", number))
@@ -207,7 +230,7 @@ async def handle_area(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ منطقه وارد شده معتبر نیست. لطفاً منطقه را به صورت صحیح وارد کنید.")
         return ASK_AREA
     if context.user_data is None:
-        context.user_data = {}
+        context.user_data.clear()
     context.user_data["area"] = area
     await update.message.reply_text("حالا کد ملی خود را وارد کنید(مثال: 1234567890)")
     return ASK_ID
@@ -220,7 +243,7 @@ async def handle_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ کد ملی وارد شده معتبر نیست. لطفاً کد ملی را به صورت صحیح وارد کنید.")
         return ASK_ID
     if context.user_data is None:
-        context.user_data = {}
+        context.user_data.clear()
     context.user_data["id"] = id
     await update.message.reply_text("حالا شماره موبایل خود را وارد کنید(مثال: 09123456789)")
     return ASK_PHONE
@@ -579,7 +602,7 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
     
     user_input = update.message.text
     if context.user_data is None:
-        context.user_data = {}
+        context.user_data.clear()
     
     # Check if this is a menu command that should end conversations
     if user_input and is_menu_command(user_input):
@@ -1076,6 +1099,7 @@ if __name__ == '__main__':
     entry_points=[MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name)],
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
+        ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city)],
         ASK_AREA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_area)],
         ASK_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_id)],
         ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
