@@ -39,12 +39,10 @@ major_map = {
 
 ASK_PAYMENT_METHOD, ASK_PAYMENT_PROOF = range(100, 102)
 
-# CRM conversation states
 ASK_CRM_PHONE, ASK_CRM_OTP = range(200, 202)
 
 ASK_RECEIPT_INSTALLMENT = range(300, 301)
 
-# Card number (static)
 CARD_NUMBER = "6037-9918-6186-2085"
 
 def is_menu_command(text: str) -> bool:
@@ -642,12 +640,10 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
     
     product_names = context.user_data.get("products", [])
     
-    # Handle referral code flow
     if context.user_data.get('waiting_for_referral_code') or user_input in ["کد معرف دارم", "کد معرف ندارم(تخفیف پیشفرض ربات)"]:
         await handle_referral_code_input(update, context)
         return
     
-    # Handle product selection
     if user_input in product_names:
         async with AsyncSessionLocal() as session:
             result = await session.execute(select(Product).where(Product.name == user_input))
@@ -666,7 +662,6 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
                 await update.message.reply_text("محصول مورد نظر یافت نشد")
         return
     
-    # Handle grade selection
     elif user_input in grade_map:
         selected_grade = grade_map[user_input]
         context.user_data['grade'] = selected_grade
@@ -681,7 +676,6 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
             await show_products(update, context, grade=selected_grade)
         return
     
-    # Handle major selection
     elif user_input in major_map:
         selected_major = major_map[user_input]
         grade = context.user_data.get('grade')
@@ -692,7 +686,6 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
             await show_products_menu(update, context)
         return
     
-    # Handle main menu options
     elif user_input == "👤 ثبت نام":
         return await ask_name(update, context)
     elif user_input == "🎲 قرعه کشی":
@@ -728,16 +721,13 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
         await start(update, context)
 
 async def start_and_end_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command handler that ends conversations"""
     await start(update, context)
     return ConversationHandler.END
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command handler"""
     if not update.effective_user or not update.message:
         return
     
-    # Clear any ongoing conversation data
     if context.user_data is not None:
         context.user_data.clear()
     
@@ -833,7 +823,6 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text("لطفاً یک عکس از فیش واریزی ارسال کنید.")
         return ASK_PAYMENT_PROOF
 
-    # ابتدا عکس را ذخیره کن
     photo = update.message.photo[-1]
     file_id = photo.file_id
 
@@ -843,7 +832,6 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
     os.makedirs("receipts", exist_ok=True)
     await file.download_to_drive(file_path)
 
-    # حالا بررسی کن که آیا برای آپلود قسط خاص هست یا سفارش جدید
     if context.user_data and "upload_order_id" in context.user_data and "upload_installment_index" in context.user_data:
         order_id = context.user_data["upload_order_id"]
         installment_index = context.user_data["upload_installment_index"]
@@ -963,25 +951,20 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif query.data == "authorize":
         await query.answer()
-        # The conversation handler will handle this automatically
-        # No need to do anything else here
     elif query.data and query.data.startswith("my_installment_"):
-        # Handle my installment callbacks
         try:
             order_id = int(query.data.split("_")[2])
             await handle_my_installment(update, context)
         except (IndexError, ValueError):
             await query.edit_message_text("خطا در خواندن اطلاعات سفارش.")
     elif query.data and query.data.startswith("installment_"):
-        # Handle single installment callbacks
         await handle_single_installment(update, context)
     elif query.data == "not_sure":
-        await help(update, context)
+        return await help(update, context)
     else:
-        print(f"Unknown button data: {query.data}")  # Debug log
+        print(f"Unknown button data: {query.data}")
 
 async def ask_crm_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start CRM phone collection process"""
     if not update.message:
         return
     
@@ -1019,7 +1002,6 @@ async def my_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     async with AsyncSessionLocal() as session:
-        # گرفتن اطلاعات کاربر از دیتابیس
         user_result = await session.execute(
             select(User).where(User.telegram_id == update.effective_user.id)
         )
@@ -1036,7 +1018,6 @@ async def my_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("شما هیچ خرید قسطی ثبت نکرده‌اید.")
             return
 
-        # Fetch product information for each order
         keyboard = []
         for order in orders:
             product_result = await session.execute(select(Product).where(Product.id == order.product_id))
@@ -1065,7 +1046,6 @@ async def handle_my_installment(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text("سفارش مورد نظر یافت نشد.")
             return
 
-        # گرفتن اطلاعات محصول
         product = await session.get(Product, order.product_id)
         if not product:
             await query.edit_message_text("محصول یافت نشد.")
@@ -1074,7 +1054,6 @@ async def handle_my_installment(update: Update, context: ContextTypes.DEFAULT_TY
         installment_amount = order.final_price // 3
         message = f"💎 سفارش: {product.name}\n💰 قیمت کل: {order.final_price:,} تومان\n📆 تعداد اقساط: 3\n💵 مبلغ هر قسط: {installment_amount:,} تومان\n\n"
 
-        # بررسی وضعیت اقساط
         keyboard = []
         installments = [order.first_installment, order.second_installment, order.third_installment]
         for i, inst_date in enumerate(installments):
@@ -1109,12 +1088,10 @@ async def handle_single_installment(update: Update, context: ContextTypes.DEFAUL
             await query.edit_message_text("سفارش پیدا نشد.")
             return
 
-        # بررسی رسیدها
         paid = False
         if order.receipts:
-            paid = True  # در حالت واقعی باید زمان و شماره قسط را بررسی کنیم
+            paid = True
 
-        # Fetch product information
         product_result = await session.execute(select(Product).where(Product.id == order.product_id))
         product = product_result.scalar_one_or_none()
         if not product:
@@ -1156,8 +1133,6 @@ if __name__ == '__main__':
     fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
     
-
-    # Remove the problematic conversation handler for buy_product since it has extra parameters
     app.add_handler(ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("^(💬 مشاوره تلفنی رایگان)$"), ask_crm_phone)],
     states={
@@ -1180,9 +1155,8 @@ if __name__ == '__main__':
     per_chat=True,
     ))
 
-    # Add conversation handler for payment process
     app.add_handler(ConversationHandler(
-    entry_points=[],  # This will be triggered by buy_product function
+    entry_points=[],
     states={
         ASK_PAYMENT_METHOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_method)],
         ASK_PAYMENT_PROOF: [MessageHandler(filters.PHOTO, handle_payment_proof)],
@@ -1198,10 +1172,8 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_payment_proof))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard_button))
     
-    # Add a general fallback handler for menu commands that can end conversations
     app.add_handler(MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation))
     
-    # Installment handlers are now handled in the general handle_button function
     app.add_error_handler(error_handler)
 
     
