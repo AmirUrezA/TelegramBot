@@ -288,11 +288,13 @@ async def handle_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await session.commit()
 
     await update.message.reply_text("🎉 ثبت‌نام شما با موفقیت انجام شد!")
+    await start(update, context)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text("ثبت‌نام لغو شد.")
+        await start(update, context)
     return ConversationHandler.END
 
 async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: int):
@@ -919,7 +921,19 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     elif query.data == "authorize":
-        return await ask_name(update, context)
+        # Start registration process from callback query
+        await query.answer()
+        await query.edit_message_text("👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:")
+        # Send a new message to start the conversation
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text="👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:"
+        )
+        # Trigger the conversation by sending the registration command
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text="👤 ثبت نام"
+        )
     elif query.data and query.data.startswith("my_installment_"):
         # Handle my installment callbacks
         try:
@@ -1107,6 +1121,8 @@ if __name__ == '__main__':
     },
     fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
+    
+
     # Remove the problematic conversation handler for buy_product since it has extra parameters
     app.add_handler(ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("^(💬 مشاوره تلفنی رایگان)$"), ask_crm_phone)],
