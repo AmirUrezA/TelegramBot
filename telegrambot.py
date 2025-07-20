@@ -889,6 +889,25 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("✅ سفارش شما ثبت شد. بسته شما تا ساعاتی دیگر ارسال خواهد شد.")
     return ConversationHandler.END
 
+async def handle_authorize_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the authorize button click from inline keyboard"""
+    if not update.callback_query:
+        return ConversationHandler.END
+    
+    query = update.callback_query
+    await query.answer()
+    
+    # Edit the message to remove the inline keyboard
+    await query.edit_message_text("شروع فرآیند ثبت نام...")
+    
+    # Send the registration prompt
+    await context.bot.send_message(
+        chat_id=query.from_user.id,
+        text="👤 لطفاً نام و نام خانوادگی خود را به فارسی وارد کنید:\nانصراف : /cancel"
+    )
+    
+    return ASK_NAME
+
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle inline keyboard button presses"""
     if not update.callback_query:
@@ -1098,7 +1117,7 @@ if __name__ == '__main__':
     app.add_handler(ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name),
-        CallbackQueryHandler(lambda u, c: ask_name(u, c), pattern="^authorize$")
+        CallbackQueryHandler(handle_authorize_callback, pattern="^authorize$")
     ],
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
