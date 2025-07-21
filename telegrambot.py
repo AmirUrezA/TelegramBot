@@ -43,7 +43,7 @@ ASK_CRM_PHONE, ASK_CRM_OTP = range(200, 202)
 
 ASK_RECEIPT_INSTALLMENT = range(300, 301)
 
-CARD_NUMBER = "6037-9918-6186-2085"
+CARD_NUMBER = "6063731181415549"
 
 def is_menu_command(text: str) -> bool:
     """Check if the text is a menu command that should end conversations"""
@@ -510,9 +510,9 @@ async def ask_for_payment_proof(update: Update, context: ContextTypes.DEFAULT_TY
 
     if installment:
         first_payment = final_price // 2
-        msg = f"💳 مبلغ قسط اول: {first_payment:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER}\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید."
+        msg = f"💳 مبلغ قسط اول را طبق مبلغ گفته شده در توضیحات محصول را واریز کنید\nشماره کارت برای واریز: {CARD_NUMBER} محمد مهدی مقدم اصل\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید.\n\n انصراف: /cancel"
     else:
-        msg = f"💳 مبلغ قابل پرداخت: {final_price:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER}\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید."
+        msg = f"💳 مبلغ قابل پرداخت: {final_price:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER} محمد مهدی مقدم اصل\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید.\n\n انصراف: /cancel"
 
     context.user_data['final_price'] = final_price
     context.user_data['first_installment'] = final_price // 2 if installment else final_price
@@ -900,7 +900,7 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
         await session.execute(insert(order_receipts).values(order_id=order.id, file_id=file_record.id))
         await session.commit()
 
-    await update.message.reply_text("✅ سفارش شما ثبت شد. بسته شما تا ساعاتی دیگر ارسال خواهد شد.")
+    await update.message.reply_text("✅ سفارش شما ثبت شد. بسته شما تا ساعاتی دیگر ارسال خواهد شد.\n\n بازگشت به منو: /start")
     return ConversationHandler.END
 
 async def handle_authorize_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
