@@ -775,13 +775,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle resume file submission"""
+    """Handle resume file submission using bot token (no user authentication needed)"""
     if not update.message or not update.effective_user:
         return ConversationHandler.END
     
     # Check if message contains a file (document, photo, or other media)
     if update.message.document or update.message.photo:
         try:
+            print("📋 Resume received, processing...")
+            
             # Get user info for the forward message
             user = update.effective_user
             user_info = f"📋 رزومه جدید از: {user.full_name or user.first_name}\n"
@@ -797,30 +799,56 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_info += f"📅 تاریخ: {datetime.now().strftime('%Y/%m/%d %H:%M')}\n"
             user_info += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            # Forward the file to @Arshya_Alaee using Telethon
-            API_ID = int(os.getenv('API_ID'))
-            API_HASH = os.getenv('API_HASH')
+            print("🔑 Getting API credentials...")
             
-            if not API_ID or not API_HASH:
+            # Get API credentials
+            API_ID = os.getenv('API_ID')
+            API_HASH = os.getenv('API_HASH')
+            BOT_TOKEN = os.getenv('BOT_TOKEN')
+            
+            if not API_ID or not API_HASH or not BOT_TOKEN:
+                print("❌ Missing API credentials")
                 await update.message.reply_text(
                     "❌ خطا در تنظیمات ربات. لطفاً با پشتیبانی تماس بگیرید: @Arshya_Alaee"
                 )
                 return ConversationHandler.END
-
-            client = TelegramClient('resume_session', int(API_ID), API_HASH)
-            await client.start()
+            
+            print("🤖 Creating Telethon client with bot token...")
+            
+            # Create client using bot token (no user authentication needed)
+            client = TelegramClient('bot_session', int(API_ID), API_HASH)
+            
+            print("🚀 Starting client with bot token...")
+            
+            # Start with bot token - this doesn't require phone authentication
+            await client.start(bot_token=BOT_TOKEN)
+            
+            print("✅ Bot client started successfully")
+            
+            print("🔍 Getting target user entity...")
+            
+            # Get Arshya_Alaee entity
+            target_user = await client.get_entity('@Arshya_Alaee')
+            
+            print("📤 Sending user info...")
             
             # Send user info first
-            await client.send_message('@Arshya_Alaee', user_info)
+            await client.send_message(target_user, user_info)
+            
+            print("📎 Forwarding resume file...")
             
             # Forward the resume file
             await client.forward_messages(
-                entity='@Arshya_Alaee',
-                messages=update.message,
+                entity=target_user,
+                messages=update.message.id,
                 from_peer=update.effective_user.id
             )
             
+            print("🔌 Disconnecting client...")
+            
             await client.disconnect()
+            
+            print("✅ Resume forwarded successfully!")
             
             # Confirm to user
             await update.message.reply_text(
@@ -834,7 +862,10 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
             
         except Exception as e:
-            print(f"Error forwarding resume: {e}")
+            print(f"❌ Error with bot session: {e}")
+            import traceback
+            traceback.print_exc()  # This will show the full error
+            
             await update.message.reply_text(
                 "❌ خطا در ارسال رزومه. لطفاً دوباره تلاش کنید.\n"
                 "یا با پشتیبانی تماس بگیرید: @Arshya_Alaee"
