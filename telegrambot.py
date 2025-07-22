@@ -12,6 +12,7 @@ import re
 import random
 from typing import Optional
 from datetime import datetime
+from telethon import TelegramClient
 
 load_dotenv()
 
@@ -42,6 +43,8 @@ ASK_PAYMENT_METHOD, ASK_PAYMENT_PROOF = range(100, 102)
 ASK_CRM_PHONE, ASK_CRM_OTP = range(200, 202)
 
 ASK_RECEIPT_INSTALLMENT = range(300, 301)
+
+ASK_RESUME = range(400, 401)
 
 CARD_NUMBER = "6063731181415549"
 
@@ -510,9 +513,9 @@ async def ask_for_payment_proof(update: Update, context: ContextTypes.DEFAULT_TY
 
     if installment:
         first_payment = final_price // 2
-        msg = f"💳 مبلغ قسط اول را طبق مبلغ گفته شده در توضیحات محصول را واریز کنید\nشماره کارت برای واریز: {CARD_NUMBER} محمد مهدی مقدم اصل\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید.\n\n انصراف: /cancel"
+        msg = f"💳 مبلغ قسط اول را طبق مبلغ گفته شده در توضیحات محصول را واریز کنید\nشماره کارت برای واریز: {CARD_NUMBER} محمد مهدی مقدم اصل\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید.\n\n انصراف: /start"
     else:
-        msg = f"💳 مبلغ قابل پرداخت: {final_price:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER} محمد مهدی مقدم اصل\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید.\n\n انصراف: /cancel"
+        msg = f"💳 مبلغ قابل پرداخت: {final_price:,} تومان\nشماره کارت برای واریز: {CARD_NUMBER} محمد مهدی مقدم اصل\n\n📸 لطفا اسکرین‌شات رسید واریزی را ارسال کنید.\n\n انصراف: /start"
 
     context.user_data['final_price'] = final_price
     context.user_data['first_installment'] = final_price // 2 if installment else final_price
@@ -714,6 +717,19 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
     elif user_input == "💬 مشاوره تلفنی رایگان":
         print("crm")
         await handle_crm_phone(update, context)
+    elif user_input == "🤝 همکاری با نمایندگی":
+        await update.message.reply_text(
+        "🤝 همکاری با نمایندگی ماز\n\n"
+        "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n"
+        "📋 برای همکاری با نمایندگی، لطفاً رزومه خود را ارسال کنید\n\n"
+        "📎 فایل‌های قابل قبول:\n"
+        "• PDF\n"
+        "• Word (.doc, .docx)\n"
+        "• تصویر (JPG, PNG)\n\n"
+        "📤 لطفاً رزومه خود را ارسال کنید:\n\n"
+        "انصراف: /start"
+        )
+        return ASK_RESUME
     else:
         await update.message.reply_text(
             "ببخشید نفهمیدم به چی نیاز داری! لطفا یکی از گزینه های منو رو انتخاب کنید."
@@ -747,6 +763,76 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown", 
         reply_markup=reply_markup
     )
+
+async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle resume file submission"""
+    if not update.message or not update.effective_user:
+        return ConversationHandler.END
+    
+    # Check if message contains a file (document, photo, or other media)
+    if update.message.document or update.message.photo:
+        try:
+            # Get user info for the forward message
+            user = update.effective_user
+            user_info = f"📋 رزومه جدید از: {user.full_name or user.first_name}\n"
+            user_info += f"👤 یوزرنیم: @{user.username}\n" if user.username else f"🆔 آیدی: {user.id}\n"
+            
+            # Get user's phone number from database if available
+            async with AsyncSessionLocal() as session:
+                db_user = await session.execute(select(User).where(User.telegram_id == user.id))
+                user_record = db_user.scalar_one_or_none()
+                if user_record and user_record.number:
+                    user_info += f"📞 شماره: {user_record.number}\n"
+            
+            user_info += f"📅 تاریخ: {datetime.now().strftime('%Y/%m/%d %H:%M')}\n"
+            user_info += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Forward the file to @Arshya_Alaee using Telethon
+            API_ID = int(os.getenv('API_ID'))
+            API_HASH = os.getenv('API_HASH')
+            
+            client = TelegramClient('resume_session', API_ID, API_HASH)
+            await client.start()
+            
+            # Send user info first
+            await client.send_message('@Arshya_Alaee', user_info)
+            
+            # Forward the resume file
+            await client.forward_messages(
+                entity='@Arshya_Alaee',
+                messages=update.message,
+                from_peer=update.effective_user.id
+            )
+            
+            await client.disconnect()
+            
+            # Confirm to user
+            await update.message.reply_text(
+                "✅ رزومه شما با موفقیت ارسال شد!\n\n"
+                "🔍 تیم ما رزومه شما را بررسی خواهد کرد\n"
+                "📞 در صورت تایید، در اسرع وقت با شما تماس خواهیم گرفت\n\n"
+                "🙏 از علاقه شما به همکاری با ما متشکریم\n\n"
+                "بازگشت به منو: /start"
+            )
+            
+            return ConversationHandler.END
+            
+        except Exception as e:
+            print(f"Error forwarding resume: {e}")
+            await update.message.reply_text(
+                "❌ خطا در ارسال رزومه. لطفاً دوباره تلاش کنید.\n"
+                "یا با پشتیبانی تماس بگیرید: @Arshya_Alaee"
+            )
+            return ConversationHandler.END
+    
+    else:
+        # User sent text instead of file
+        await update.message.reply_text(
+            "📎 لطفاً فایل رزومه خود را ارسال کنید\n"
+            "(PDF, Word, یا تصویر)\n\n"
+            "انصراف: /start"
+        )
+        return ASK_RESUME
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command handler"""
@@ -1124,6 +1210,31 @@ async def handle_single_installment(update: Update, context: ContextTypes.DEFAUL
         )
         await query.edit_message_text(message)
 
+async def send_message_to_admin(message: str):
+    API_ID = os.getenv('API_ID')
+    API_HASH = os.getenv('API_HASH')
+    client = TelegramClient(session='my_session', api_id=API_ID, api_hash=API_HASH)
+    await client.start()
+    await client.send_message('me', message)
+    await client.disconnect()
+
+async def handle_document_forwarding(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle any document sent to the bot and forward to admin if it's a resume"""
+    if not update.message or not update.effective_user:
+        return
+    
+    # Check if we're expecting a resume (you can set a flag in user_data)
+    if context.user_data and context.user_data.get('expecting_resume'):
+        await handle_resume(update, context)
+        context.user_data['expecting_resume'] = False
+        return
+    
+    # Otherwise, handle normally
+    await update.message.reply_text(
+        "📎 فایل دریافت شد!\n"
+        "اگر این رزومه شماست، از منوی اصلی گزینه '🤝 همکاری با نمایندگی' را انتخاب کنید"
+    )
+
 async def init_db():
     """Initialize database"""
     async with engine.begin() as conn:
@@ -1180,6 +1291,23 @@ if __name__ == '__main__':
         ASK_PAYMENT_PROOF: [MessageHandler(filters.PHOTO, handle_payment_proof)],
     },
     fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+    ))
+
+    app.add_handler(ConversationHandler(
+    entry_points=[
+        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), lambda u, c: handle_reply_keyboard_button(u, c))
+    ],
+    states={
+        ASK_RESUME: [
+            MessageHandler(filters.Document.ALL | filters.PHOTO, handle_resume),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_resume)
+        ],
+    },
+    fallbacks=[
+        CommandHandler("cancel", cancel), 
+        CommandHandler("start", start_and_end_conversation), 
+        MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
+    ],
     ))
 
     app.add_handler(CallbackQueryHandler(handle_button))
