@@ -844,6 +844,23 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ASK_RESUME
 
+async def handle_document_forwarding(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle any document sent to the bot and forward to admin if it's a resume"""
+    if not update.message or not update.effective_user:
+        return
+    
+    # Check if we're expecting a resume (you can set a flag in user_data)
+    if context.user_data and context.user_data.get('expecting_resume'):
+        await handle_resume(update, context)
+        context.user_data['expecting_resume'] = False
+        return
+    
+    # Otherwise, handle normally
+    await update.message.reply_text(
+        "📎 فایل دریافت شد!\n"
+        "اگر این رزومه شماست، از منوی اصلی گزینه '🤝 همکاری با نمایندگی' را انتخاب کنید"
+    )
+
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command handler"""
     if not update.message:
@@ -1281,6 +1298,24 @@ if __name__ == '__main__':
     fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     per_chat=True,
     ))
+
+    app.add_handler(ConversationHandler(
+    entry_points=[
+        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), lambda u, c: handle_reply_keyboard_button(u, c))
+    ],
+    states={
+        ASK_RESUME: [
+            MessageHandler(filters.Document.ALL | filters.PHOTO, handle_resume),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_resume)
+        ],
+    },
+    fallbacks=[
+        CommandHandler("cancel", cancel), 
+        CommandHandler("start", start_and_end_conversation), 
+        MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
+    ],
+    ))
+    
     app.add_handler(ConversationHandler(
     entry_points=[
         CallbackQueryHandler(handle_upload_receipt_callback, pattern="^upload_receipt_")
@@ -1303,29 +1338,12 @@ if __name__ == '__main__':
     fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
 
-    app.add_handler(ConversationHandler(
-    entry_points=[
-        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), lambda u, c: handle_reply_keyboard_button(u, c))
-    ],
-    states={
-        ASK_RESUME: [
-            MessageHandler(filters.Document.ALL | filters.PHOTO, handle_resume),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_resume)
-        ],
-    },
-    fallbacks=[
-        CommandHandler("cancel", cancel), 
-        CommandHandler("start", start_and_end_conversation), 
-        MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
-    ],
-    ))
-
     app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("products", products))   
     app.add_handler(MessageHandler(filters.Regex("^(پرداخت نقدی|پرداخت قسطی)$"), handle_payment_method))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_payment_proof))
+    app.add_handler(MessageHandler(filters.PHOTO & ~filters.UpdateType.EDITED, handle_payment_proof))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard_button))
     
     app.add_handler(MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation))
