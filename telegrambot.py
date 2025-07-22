@@ -801,7 +801,13 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
             API_ID = int(os.getenv('API_ID'))
             API_HASH = os.getenv('API_HASH')
             
-            client = TelegramClient('resume_session', API_ID, API_HASH)
+            if not API_ID or not API_HASH:
+                await update.message.reply_text(
+                    "❌ خطا در تنظیمات ربات. لطفاً با پشتیبانی تماس بگیرید: @Arshya_Alaee"
+                )
+                return ConversationHandler.END
+
+            client = TelegramClient('resume_session', int(API_ID), API_HASH)
             await client.start()
             
             # Send user info first
@@ -1284,7 +1290,7 @@ if __name__ == '__main__':
 
     app.add_handler(ConversationHandler(
     entry_points=[
-        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), lambda u, c: handle_reply_keyboard_button(u, c))
+        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), handle_reply_keyboard_button)
     ],
     states={
         ASK_RESUME: [
