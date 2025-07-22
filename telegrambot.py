@@ -867,6 +867,21 @@ async def handle_document_forwarding(update: Update, context: ContextTypes.DEFAU
         "اگر این رزومه شماست، از منوی اصلی گزینه '🤝 همکاری با نمایندگی' را انتخاب کنید"
     )
 
+async def start_resume_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start the resume submission conversation"""
+    await update.message.reply_text(
+        "🤝 همکاری با نمایندگی ماز\n\n"
+        "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n"
+        "📋 برای همکاری با نمایندگی، لطفاً رزومه خود را ارسال کنید\n\n"
+        "📎 فایل‌های قابل قبول:\n"
+        "• PDF\n"
+        "• Word (.doc, .docx)\n"
+        "• تصویر (JPG, PNG)\n\n"
+        "📤 لطفاً رزومه خود را ارسال کنید:\n\n"
+        "انصراف: /start"
+    )
+    return ASK_RESUME
+
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command handler"""
     if not update.message:
@@ -1290,7 +1305,7 @@ if __name__ == '__main__':
 
     app.add_handler(ConversationHandler(
     entry_points=[
-        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), handle_reply_keyboard_button)
+        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), start_resume_conversation)
     ],
     states={
         ASK_RESUME: [
