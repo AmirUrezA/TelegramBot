@@ -775,16 +775,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle resume file submission using bot token (no user authentication needed)"""
+    """Handle resume file submission using bot token (supports files, photos, and text)"""
     if not update.message or not update.effective_user:
         return ConversationHandler.END
     
-    # Check if message contains a file (document, photo, or other media)
-    if update.message.document or update.message.photo:
+    # Check if message contains a file, photo, or text
+    if update.message.document or update.message.photo or update.message.text:
         try:
             print("📋 Resume received, processing...")
             
-            # Get user info for the forward message
+            # Get user info
             user = update.effective_user
             user_info = f"📋 رزومه جدید از: {user.full_name or user.first_name}\n"
             user_info += f"👤 یوزرنیم: @{user.username}\n" if user.username else f"🆔 آیدی: {user.id}\n"
@@ -797,6 +797,20 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     user_info += f"📞 شماره: {user_record.number}\n"
             
             user_info += f"📅 تاریخ: {datetime.now().strftime('%Y/%m/%d %H:%M')}\n"
+            
+            # Check what type of resume we received
+            resume_type = ""
+            if update.message.document:
+                resume_type = f"📎 فایل: {update.message.document.file_name or 'سند'}"
+            elif update.message.photo:
+                resume_type = "📷 تصویر"
+            elif update.message.text:
+                resume_type = "📝 متن"
+                # Add preview of text content
+                text_preview = update.message.text[:100] + "..." if len(update.message.text) > 100 else update.message.text
+                user_info += f"📝 پیش‌نمایش: {text_preview}\n"
+            
+            user_info += f"📄 نوع رزومه: {resume_type}\n"
             user_info += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             print("🔑 Getting API credentials...")
@@ -815,19 +829,17 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             print("🤖 Creating Telethon client with bot token...")
             
-            # Create client using bot token (no user authentication needed)
+            # Create client using bot token
             client = TelegramClient('bot_session', int(API_ID), API_HASH)
             
             print("🚀 Starting client with bot token...")
-            
-            # Start with bot token - this doesn't require phone authentication
             await client.start(bot_token=BOT_TOKEN)
             
             print("✅ Bot client started successfully")
             
             print("🔍 Getting target user entity...")
             
-            # Get Arshya_Alaee entity
+            # Get target user entity
             target_user = await client.get_entity('@Arshya_Alaee')
             
             print("📤 Sending user info...")
@@ -835,20 +847,25 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Send user info first
             await client.send_message(target_user, user_info)
             
-            print("📎 Forwarding resume file...")
-            
-            # Forward the resume file
-            await client.forward_messages(
-                entity=target_user,
-                messages=update.message.id,
-                from_peer=update.effective_user.id
-            )
+            # Handle different types of content
+            if update.message.text:
+                # For text resumes, send the text directly
+                print("📝 Sending text resume...")
+                text_message = f"📝 رزومه متنی از {user.full_name or user.first_name}:\n\n{update.message.text}"
+                await client.send_message(target_user, text_message)
+            else:
+                # For files and photos, forward the message
+                print("📎 Forwarding resume file...")
+                await client.forward_messages(
+                    entity=target_user,
+                    messages=update.message.id,
+                    from_peer=update.effective_user.id
+                )
             
             print("🔌 Disconnecting client...")
-            
             await client.disconnect()
             
-            print("✅ Resume forwarded successfully!")
+            print("✅ Resume sent successfully!")
             
             # Confirm to user
             await update.message.reply_text(
@@ -864,7 +881,7 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"❌ Error with bot session: {e}")
             import traceback
-            traceback.print_exc()  # This will show the full error
+            traceback.print_exc()
             
             await update.message.reply_text(
                 "❌ خطا در ارسال رزومه. لطفاً دوباره تلاش کنید.\n"
@@ -873,10 +890,12 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
     
     else:
-        # User sent text instead of file
+        # This shouldn't happen now since we accept text too
         await update.message.reply_text(
-            "📎 لطفاً فایل رزومه خود را ارسال کنید\n"
-            "(PDF, Word, یا تصویر)\n\n"
+            "📎 لطفاً رزومه خود را ارسال کنید:\n"
+            "• فایل (PDF, Word)\n"
+            "• تصویر (JPG, PNG)\n"
+            "• متن (تایپ کردن مستقیم)\n\n"
             "انصراف: /start"
         )
         return ASK_RESUME
@@ -904,11 +923,11 @@ async def start_resume_conversation(update: Update, context: ContextTypes.DEFAUL
         "🤝 همکاری با نمایندگی ماز\n\n"
         "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n"
         "📋 برای همکاری با نمایندگی، لطفاً رزومه خود را ارسال کنید\n\n"
-        "📎 فایل‌های قابل قبول:\n"
-        "• PDF\n"
-        "• Word (.doc, .docx)\n"
-        "• تصویر (JPG, PNG)\n\n"
-        "📤 لطفاً رزومه خود را ارسال کنید:\n\n"
+        "📎 روش‌های ارسال رزومه:\n"
+        "• 📄 فایل (PDF, Word)\n"
+        "• 📷 تصویر (JPG, PNG)\n"
+        "• 📝 متن (تایپ مستقیم در همین چت)\n\n"
+        "📤 لطفاً رزومه خود را با یکی از روش‌های بالا ارسال کنید:\n\n"
         "انصراف: /start"
     )
     return ASK_RESUME
