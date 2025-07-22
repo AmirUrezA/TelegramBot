@@ -117,8 +117,18 @@ async def handle_menu_command_in_conversation(update: Update, context: ContextTy
         await contact(update, context)
         return ConversationHandler.END
     elif text == "🤝 همکاری با نمایندگی":
-        await contact(update, context)
-        return ConversationHandler.END
+        await update.message.reply_text(
+        "🤝 همکاری با نمایندگی ماز\n\n"
+        "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n"
+        "📋 برای همکاری با نمایندگی، لطفاً رزومه خود را ارسال کنید\n\n"
+        "📎 فایل‌های قابل قبول:\n"
+        "• PDF\n"
+        "• Word (.doc, .docx)\n"
+        "• تصویر (JPG, PNG)\n\n"
+        "📤 لطفاً رزومه خود را ارسال کنید:\n\n"
+        "انصراف: /start"
+        )
+        return ASK_RESUME
     else:
         # For other menu commands, just end the conversation and show the main menu
         await start(update, context)
