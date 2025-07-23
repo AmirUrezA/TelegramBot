@@ -705,6 +705,7 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
         return await ask_name(update, context)
     elif user_input == "🎲 قرعه کشی":
         await lottery(update, context)
+        return
     elif user_input == "📚 خرید محصولات با تخفیف ویژه نمایندگی 📚":
         await show_products_menu(update, context)
     elif user_input == "💡 راهنما":
@@ -987,6 +988,27 @@ async def lottery(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Lottery command handler"""
     if not update.message:
         return
+    
+    async with AsyncSessionLocal() as session:
+        lottery_result = await session.execute(select(Lottery))
+        lotteries = lottery_result.scalars().all()
+        
+        if not lotteries:
+            await update.message.reply_text("در حال حاضر قرعه‌کشی فعالی وجود ندارد.")
+            return
+            
+        keyboard = [[lottery.name] for lottery in lotteries]
+        keyboard.append(["🔙 بازگشت به منو"])
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text(
+            "🎲 لطفا قرعه کشی مورد نظر خود را انتخاب کنید:\n\nانصراف: /cancel", 
+            reply_markup=reply_markup
+        )
+
+async def start_lottery_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start lottery conversation handler"""
+    if not update.message:
+        return ConversationHandler.END
     
     async with AsyncSessionLocal() as session:
         lottery_result = await session.execute(select(Lottery))
@@ -1501,7 +1523,7 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(str(BOT_TOKEN)).build()
     
     app.add_handler(ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^(🎲 قرعه کشی)$"), lottery)],
+    entry_points=[MessageHandler(filters.Regex("^(🎲 قرعه کشی)$"), start_lottery_conversation)],
     states={
         ASK_LOTTERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_selection)],
         ASK_LOTTERY_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_number)],
