@@ -1,7 +1,7 @@
 from random import choice
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table
 from datetime import date, datetime
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import ONETOMANY, relationship, declarative_base
 from sqlalchemy.types import Enum as SqlEnum
 from enum import Enum
 
@@ -126,3 +126,22 @@ class CRM(Base):
     number = Column(String, nullable=False)
     called = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
+
+class UsersInLottery(Base):
+    __tablename__ = "users_in_lottery"
+
+    id = Column(Integer, primary_key=True)
+    telegram_id = Column(Integer, nullable=False)
+    username = Column(String, nullable=False)
+    number = Column(String, nullable=False)
+    lottery_id = Column(Integer, ForeignKey("lottery.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class Lottery(Base):
+    __tablename__ = "lottery"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    participants = relationship("UsersInLottery", backref="lottery")

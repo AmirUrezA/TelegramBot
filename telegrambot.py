@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from db import engine, Base, AsyncSessionLocal
 import asyncio
-from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File, CRM, order_receipts
+from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File, CRM, order_receipts, Lottery, UsersInLottery
 from sqlalchemy import select, insert
 from kavenegar import *
 import re
@@ -45,6 +45,8 @@ ASK_CRM_PHONE, ASK_CRM_OTP = range(200, 202)
 ASK_RECEIPT_INSTALLMENT = range(300, 301)
 
 ASK_RESUME = range(400, 401)
+
+ASK_LOTTERY, ASK_LOTTERY_NUMBER, ASK_LOTTERY_OTP = range(500, 503)
 
 CARD_NUMBER = "6063731181415549"
 
@@ -986,7 +988,180 @@ async def lottery(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
     
-    await update.message.reply_text("🎲 قرعه کشی - به زودی فعال خواهد شد!")
+    async with AsyncSessionLocal() as session:
+        lottery_result = await session.execute(select(Lottery))
+        lotteries = lottery_result.scalars().all()
+        
+        if not lotteries:
+            await update.message.reply_text("در حال حاضر قرعه‌کشی فعالی وجود ندارد.")
+            return ConversationHandler.END
+            
+        keyboard = [[lottery.name] for lottery in lotteries]
+        keyboard.append(["🔙 بازگشت به منو"])
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text(
+            "🎲 لطفا قرعه کشی مورد نظر خود را انتخاب کنید:\n\nانصراف: /cancel", 
+            reply_markup=reply_markup
+        )
+        return ASK_LOTTERY
+
+async def handle_lottery_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle lottery selection"""
+    if not update.message or not update.message.text:
+        return ASK_LOTTERY
+    
+    lottery_name = update.message.text.strip()
+    
+    # Check if user wants to go back
+    if lottery_name == "🔙 بازگشت به منو":
+        await start(update, context)
+        return ConversationHandler.END
+    
+    async with AsyncSessionLocal() as session:
+        lottery_result = await session.execute(select(Lottery).where(Lottery.name == lottery_name))
+        lottery = lottery_result.scalar_one_or_none()
+        
+        if not lottery:
+            await update.message.reply_text("❌ قرعه کشی مورد نظر یافت نشد. لطفا دوباره انتخاب کنید:")
+            return ASK_LOTTERY
+        
+        # Store selected lottery in context
+        if context.user_data is None:
+            context.user_data = {}
+        context.user_data["selected_lottery"] = lottery
+        
+        # Check if user is already registered for THIS specific lottery
+        if update.effective_user:
+            existing_user = await session.execute(
+                select(UsersInLottery).where(
+                    UsersInLottery.telegram_id == update.effective_user.id,
+                    UsersInLottery.lottery_id == lottery.id  # Check for specific lottery
+                )
+            )
+            existing_entry = existing_user.scalar_one_or_none()
+            
+            if existing_entry:
+                await update.message.reply_text(
+                    f"✅ شما قبلاً در قرعه‌کشی '{lottery.name}' ثبت‌نام کرده‌اید!\n\n"
+                    f"📋 توضیحات: {lottery.description}\n\n"
+                    "بازگشت به منو: /start"
+                )
+                return ConversationHandler.END
+        
+        # Show lottery details and ask for phone number
+        await update.message.reply_text(
+            f"🎲 قرعه‌کشی انتخابی: {lottery.name}\n"
+            f"📋 توضیحات: {lottery.description}\n\n"
+            "📱 لطفاً شماره موبایل خود را برای شرکت در قرعه‌کشی وارد کنید (مثال: 09123456789):\n\n"
+            "انصراف: /cancel",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return ASK_LOTTERY_NUMBER
+
+async def handle_lottery_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle lottery phone number input"""
+    if not update.message or not update.message.text:
+        return ASK_LOTTERY_NUMBER
+    
+    phone = update.message.text.strip()
+    
+    # Convert Persian digits to English
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    phone = phone.translate(trans_table)
+    
+    if not is_valid_phone(phone):
+        await update.message.reply_text("❌ شماره وارد شده معتبر نیست. لطفاً شماره را به صورت صحیح وارد کنید:")
+        return ASK_LOTTERY_NUMBER
+
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["lottery_phone"] = phone
+
+    # Generate OTP
+    otp = str(random.randint(1000, 9999))
+    context.user_data["lottery_otp"] = otp
+
+    # Send OTP via Kavenegar
+    try:
+        api = KavenegarAPI(os.getenv("KAVENEGAR_API_KEY"))
+        api.verify_lookup({
+            "receptor": phone,
+            "token": otp,
+            "template": "verify",
+            "type": "sms"
+        })
+        await update.message.reply_text("✅ کد تایید پیامک شد. لطفاً کد را وارد کنید:")
+        return ASK_LOTTERY_OTP
+    except Exception as e:
+        await update.message.reply_text(f"خطا در ارسال پیامک: {e}\nلطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.")
+        return ConversationHandler.END
+
+async def handle_lottery_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle lottery OTP verification and register user"""
+    if not update.message or not update.message.text or not update.effective_user:
+        return ASK_LOTTERY_OTP
+    
+    code = update.message.text.strip()
+    
+    # Convert Persian digits to English
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    code = code.translate(trans_table)
+    
+    if context.user_data is None or code != context.user_data.get("lottery_otp"):
+        await update.message.reply_text("❌ کد وارد شده صحیح نیست. لطفا دوباره تلاش کنید:")
+        return ASK_LOTTERY_OTP
+
+    # Get stored data
+    phone = context.user_data["lottery_phone"]
+    lottery = context.user_data["selected_lottery"]
+    telegram_id = update.effective_user.id
+    username = update.effective_user.username or ""
+
+    async with AsyncSessionLocal() as session:
+        # Check if user is already registered for THIS specific lottery (more precise check)
+        existing_user = await session.execute(
+            select(UsersInLottery).where(
+                UsersInLottery.telegram_id == telegram_id,
+                UsersInLottery.lottery_id == lottery.id  # Check for specific lottery
+            )
+        )
+        existing_entry = existing_user.scalar_one_or_none()
+        
+        if existing_entry:
+            await update.message.reply_text(
+                f"✅ شما قبلاً در قرعه‌کشی '{lottery.name}' ثبت‌نام کرده‌اید!\n\n"
+                "بازگشت به منو: /start"
+            )
+            return ConversationHandler.END
+        
+        # Register user in lottery with the correct lottery_id
+        lottery_user = UsersInLottery(
+            telegram_id=telegram_id,
+            username=username,
+            number=phone,
+            lottery_id=lottery.id  # This is the important fix!
+        )
+        session.add(lottery_user)
+        await session.commit()
+
+    # Success message
+    await update.message.reply_text(
+        f"🎉 تبریک! شما با موفقیت در قرعه‌کشی '{lottery.name}' ثبت‌نام شدید!\n\n"
+        f"📱 شماره ثبت شده: {phone}\n"
+        f"🎲 قرعه‌کشی: {lottery.name}\n\n"
+        "🍀 موفق باشید!\n\n"
+        "بازگشت به منو: /start"
+    )
+    
+    # Clear user data
+    if context.user_data:
+        context.user_data.clear()
+        
+    return ConversationHandler.END
 
 async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Contact command handler"""
@@ -1325,6 +1500,21 @@ if __name__ == '__main__':
     BOT_TOKEN = os.getenv('BOT_TOKEN')
     app = ApplicationBuilder().token(str(BOT_TOKEN)).build()
     
+    app.add_handler(ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("^(🎲 قرعه کشی)$"), lottery)],
+    states={
+        ASK_LOTTERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_selection)],
+        ASK_LOTTERY_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_number)],
+        ASK_LOTTERY_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_otp)],
+    },
+    fallbacks=[
+        CommandHandler("cancel", cancel), 
+        CommandHandler("start", start_and_end_conversation), 
+        MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
+    ],
+    per_chat=True,
+    ))
+
     app.add_handler(ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name),
