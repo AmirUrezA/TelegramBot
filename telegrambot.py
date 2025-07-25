@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from db import engine, Base, AsyncSessionLocal
 import asyncio
-from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File, CRM, order_receipts, Lottery, UsersInLottery
+from models import GradeEnum, MajorEnum, Product, ReferralCode, User, Order, OrderStatusEnum, ReferralCodeProductEnum, File, CRM, order_receipts, Lottery, UsersInLottery, Cooperation
 from sqlalchemy import select, insert
 from kavenegar import *
 import re
@@ -44,7 +44,7 @@ ASK_CRM_PHONE, ASK_CRM_OTP = range(200, 202)
 
 ASK_RECEIPT_INSTALLMENT = range(300, 301)
 
-ASK_RESUME = range(400, 401)
+ASK_COOPERATION_PHONE, ASK_COOPERATION_OTP, ASK_COOPERATION_CITY, ASK_COOPERATION_RESUME = range(400, 404)
 
 ASK_LOTTERY, ASK_LOTTERY_NUMBER, ASK_LOTTERY_OTP = range(500, 503)
 
@@ -119,18 +119,8 @@ async def handle_menu_command_in_conversation(update: Update, context: ContextTy
         await contact(update, context)
         return ConversationHandler.END
     elif text == "🤝 همکاری با نمایندگی":
-        await update.message.reply_text(
-        "🤝 همکاری با نمایندگی ماز\n\n"
-        "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n"
-        "📋 برای همکاری با نمایندگی، لطفاً رزومه خود را ارسال کنید\n\n"
-        "📎 فایل‌های قابل قبول:\n"
-        "• PDF\n"
-        "• Word (.doc, .docx)\n"
-        "• تصویر (JPG, PNG)\n\n"
-        "📤 لطفاً رزومه خود را ارسال کنید:\n\n"
-        "انصراف: /start"
-        )
-        return ASK_RESUME
+        await start_cooperation_conversation(update, context)
+        return ConversationHandler.END
     else:
         # For other menu commands, just end the conversation and show the main menu
         await start(update, context)
@@ -321,6 +311,233 @@ async def handle_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎉 ثبت‌نام شما با موفقیت انجام شد!")
     await start(update, context)
     return ConversationHandler.END
+
+async def start_cooperation_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start the cooperation conversation by asking for phone number"""
+    if not update.message:
+        return ConversationHandler.END
+    
+    await update.message.reply_text(
+        "🤝 همکاری با نمایندگی ماز\n\n"
+        "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n\n"
+        "📱 لطفاً شماره موبایل خود را وارد کنید (مثال: 09123456789):\n\n"
+        "انصراف: /cancel",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return ASK_COOPERATION_PHONE
+
+async def handle_cooperation_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle cooperation phone number input and send OTP"""
+    if not update.message or not update.message.text:
+        return ASK_COOPERATION_PHONE
+    
+    phone = update.message.text.strip()
+    
+    # Convert Persian digits to English
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    phone = phone.translate(trans_table)
+    
+    if not is_valid_phone(phone):
+        await update.message.reply_text("❌ شماره وارد شده معتبر نیست. لطفاً شماره را به صورت صحیح وارد کنید:")
+        return ASK_COOPERATION_PHONE
+
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["cooperation_phone"] = phone
+
+    # Generate OTP
+    otp = str(random.randint(1000, 9999))
+    context.user_data["cooperation_otp"] = otp
+
+    # Send OTP via Kavenegar
+    try:
+        api = KavenegarAPI(os.getenv("KAVENEGAR_API_KEY"))
+        api.verify_lookup({
+            "receptor": phone,
+            "token": otp,
+            "template": "verify",
+            "type": "sms"
+        })
+        await update.message.reply_text("✅ کد تایید پیامک شد. لطفاً کد را وارد کنید:")
+        return ASK_COOPERATION_OTP
+    except Exception as e:
+        await update.message.reply_text(f"خطا در ارسال پیامک: {e}\nلطفاً دوباره تلاش کنید.")
+        return ConversationHandler.END
+
+async def handle_cooperation_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle cooperation OTP verification"""
+    if not update.message or not update.message.text:
+        return ASK_COOPERATION_OTP
+    
+    code = update.message.text.strip()
+    
+    # Convert Persian digits to English
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans_table = str.maketrans(persian_digits, english_digits)
+    code = code.translate(trans_table)
+    
+    if context.user_data is None or code != context.user_data.get("cooperation_otp"):
+        await update.message.reply_text("❌ کد وارد شده صحیح نیست. لطفا دوباره تلاش کنید:")
+        return ASK_COOPERATION_OTP
+
+    await update.message.reply_text(
+        "✅ شماره تلفن شما تایید شد!\n\n"
+        "🏙️ حالا لطفاً شهر محل سکونت خود را وارد کنید:"
+    )
+    return ASK_COOPERATION_CITY
+
+async def handle_cooperation_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle cooperation city input"""
+    if not update.message or not update.message.text:
+        return ASK_COOPERATION_CITY
+    
+    city = update.message.text.strip()
+    
+    if len(city) < 2:
+        await update.message.reply_text("❌ لطفاً نام شهر را به درستی وارد کنید:")
+        return ASK_COOPERATION_CITY
+    
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["cooperation_city"] = city
+    
+    await update.message.reply_text(
+        "✅ شهر شما ثبت شد!\n\n"
+        "📝 حالا لطفاً رزومه خود را به صورت متن ارسال کنید.\n"
+        "در رزومه خود موارد زیر را ذکر کنید:\n\n"
+        "• سوابق تحصیلی\n"
+        "• سوابق کاری\n"
+        "• مهارت‌ها و تخصص‌ها\n"
+        "• علاقه‌مندی‌ها\n"
+        "• انگیزه همکاری با ماز\n\n"
+        "💡 هر چه رزومه شما کامل‌تر باشد، شانس بررسی بیشتری خواهد داشت:"
+    )
+    return ASK_COOPERATION_RESUME
+
+async def handle_cooperation_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle cooperation resume text and save to database"""
+    if not update.message or not update.message.text or not update.effective_user:
+        # Only accept text, reject files/photos
+        if update.message and (update.message.document or update.message.photo):
+            await update.message.reply_text(
+                "❌ لطفاً رزومه خود را فقط به صورت متن ارسال کنید، نه فایل یا عکس.\n"
+                "📝 رزومه خود را تایپ کنید:"
+            )
+            return ASK_COOPERATION_RESUME
+        return ASK_COOPERATION_RESUME
+    
+    resume_text = update.message.text.strip()
+    
+    if len(resume_text) < 50:
+        await update.message.reply_text(
+            "❌ رزومه شما خیلی کوتاه است. لطفاً اطلاعات بیشتری در مورد خودتان ارائه دهید:\n"
+            "(حداقل 50 کاراکتر)"
+        )
+        return ASK_COOPERATION_RESUME
+    
+    # Get stored data
+    phone = context.user_data.get("cooperation_phone")
+    city = context.user_data.get("cooperation_city")
+    telegram_id = update.effective_user.id
+    username = update.effective_user.username or ""
+    
+    # Save to database
+    async with AsyncSessionLocal() as session:
+        # Check if user already submitted cooperation application
+        existing_cooperation = await session.execute(
+            select(Cooperation).where(Cooperation.telegram_id == telegram_id)
+        )
+        existing_record = existing_cooperation.scalar_one_or_none()
+        
+        if existing_record:
+            # Update existing record
+            existing_record.phone_number = phone
+            existing_record.city = city
+            existing_record.resume_text = resume_text
+            existing_record.username = username
+            await session.commit()
+            
+            await update.message.reply_text(
+                "✅ رزومه شما با موفقیت به‌روزرسانی شد!\n\n"
+                "🔍 تیم ما رزومه جدید شما را بررسی خواهد کرد\n"
+                "📞 در صورت تایید، در اسرع وقت با شما تماس خواهیم گرفت\n\n"
+                "🙏 از علاقه شما به همکاری با ما متشکریم\n\n"
+                "بازگشت به منو: /start"
+            )
+        else:
+            # Create new record
+            cooperation_record = Cooperation(
+                telegram_id=telegram_id,
+                username=username,
+                phone_number=phone,
+                city=city,
+                resume_text=resume_text
+            )
+            session.add(cooperation_record)
+            await session.commit()
+            
+            await update.message.reply_text(
+                "✅ رزومه شما با موفقیت ثبت شد!\n\n"
+                "🔍 تیم ما رزومه شما را بررسی خواهد کرد\n"
+                "📞 در صورت تایید، در اسرع وقت با شما تماس خواهیم گرفت\n\n"
+                "🙏 از علاقه شما به همکاری با ما متشکریم\n\n"
+                "بازگشت به منو: /start"
+            )
+    
+    # Send notification to admin
+    try:
+        await send_cooperation_notification_to_admin(telegram_id, username, phone, city, resume_text)
+    except Exception as e:
+        print(f"Error sending notification to admin: {e}")
+    
+    # Clear user data
+    if context.user_data:
+        context.user_data.clear()
+        
+    return ConversationHandler.END
+
+async def send_cooperation_notification_to_admin(telegram_id: int, username: str, phone: str, city: str, resume_text: str):
+    """Send cooperation application notification to admin"""
+    try:
+        API_ID = os.getenv('API_ID')
+        API_HASH = os.getenv('API_HASH')
+        BOT_TOKEN = os.getenv('BOT_TOKEN')
+        
+        if not API_ID or not API_HASH or not BOT_TOKEN:
+            print("❌ Missing API credentials for admin notification")
+            return
+        
+        # Create client using bot token
+        client = TelegramClient('bot_session_coop', int(API_ID), API_HASH)
+        await client.start(bot_token=BOT_TOKEN)
+        
+        # Get target user entity
+        target_user = await client.get_entity('@Arshya_Alaee')
+        
+        # Create notification message
+        notification_message = (
+            "🤝 درخواست همکاری جدید!\n\n"
+            f"👤 یوزرنیم: @{username}\n" if username else f"🆔 آیدی: {telegram_id}\n"
+            f"📞 شماره: {phone}\n"
+            f"🏙️ شهر: {city}\n"
+            f"📅 تاریخ: {datetime.now().strftime('%Y/%m/%d %H:%M')}\n\n"
+            f"📝 رزومه:\n{resume_text}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        
+        # Send notification
+        await client.send_message(target_user, notification_message)
+        await client.disconnect()
+        
+        print("✅ Cooperation notification sent to admin successfully!")
+        
+    except Exception as e:
+        print(f"❌ Error sending cooperation notification: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
@@ -731,18 +948,7 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
         print("crm")
         await handle_crm_phone(update, context)
     elif user_input == "🤝 همکاری با نمایندگی":
-        await update.message.reply_text(
-        "🤝 همکاری با نمایندگی ماز\n\n"
-        "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n"
-        "📋 برای همکاری با نمایندگی، لطفاً رزومه خود را ارسال کنید\n\n"
-        "📎 فایل‌های قابل قبول:\n"
-        "• PDF\n"
-        "• Word (.doc, .docx)\n"
-        "• تصویر (JPG, PNG)\n\n"
-        "📤 لطفاً رزومه خود را ارسال کنید:\n\n"
-        "انصراف: /start"
-        )
-        return ASK_RESUME
+        await start_cooperation_conversation(update, context)
     else:
         await update.message.reply_text(
             "ببخشید نفهمیدم به چی نیاز داری! لطفا یکی از گزینه های منو رو انتخاب کنید."
@@ -776,164 +982,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown", 
         reply_markup=reply_markup
     )
-
-async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle resume file submission using bot token (supports files, photos, and text)"""
-    if not update.message or not update.effective_user:
-        return ConversationHandler.END
-    
-    # Check if message contains a file, photo, or text
-    if update.message.document or update.message.photo or update.message.text:
-        try:
-            print("📋 Resume received, processing...")
-            
-            # Get user info
-            user = update.effective_user
-            user_info = f"📋 رزومه جدید از: {user.full_name or user.first_name}\n"
-            user_info += f"👤 یوزرنیم: @{user.username}\n" if user.username else f"🆔 آیدی: {user.id}\n"
-            
-            # Get user's phone number from database if available
-            async with AsyncSessionLocal() as session:
-                db_user = await session.execute(select(User).where(User.telegram_id == user.id))
-                user_record = db_user.scalar_one_or_none()
-                if user_record and user_record.number:
-                    user_info += f"📞 شماره: {user_record.number}\n"
-            
-            user_info += f"📅 تاریخ: {datetime.now().strftime('%Y/%m/%d %H:%M')}\n"
-            
-            # Check what type of resume we received
-            resume_type = ""
-            if update.message.document:
-                resume_type = f"📎 فایل: {update.message.document.file_name or 'سند'}"
-            elif update.message.photo:
-                resume_type = "📷 تصویر"
-            elif update.message.text:
-                resume_type = "📝 متن"
-                # Add preview of text content
-                text_preview = update.message.text[:100] + "..." if len(update.message.text) > 100 else update.message.text
-                user_info += f"📝 پیش‌نمایش: {text_preview}\n"
-            
-            user_info += f"📄 نوع رزومه: {resume_type}\n"
-            user_info += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            print("🔑 Getting API credentials...")
-            
-            # Get API credentials
-            API_ID = os.getenv('API_ID')
-            API_HASH = os.getenv('API_HASH')
-            BOT_TOKEN = os.getenv('BOT_TOKEN')
-            
-            if not API_ID or not API_HASH or not BOT_TOKEN:
-                print("❌ Missing API credentials")
-                await update.message.reply_text(
-                    "❌ خطا در تنظیمات ربات. لطفاً با پشتیبانی تماس بگیرید: @Arshya_Alaee"
-                )
-                return ConversationHandler.END
-            
-            print("🤖 Creating Telethon client with bot token...")
-            
-            # Create client using bot token
-            client = TelegramClient('bot_session', int(API_ID), API_HASH)
-            
-            print("🚀 Starting client with bot token...")
-            await client.start(bot_token=BOT_TOKEN)
-            
-            print("✅ Bot client started successfully")
-            
-            print("🔍 Getting target user entity...")
-            
-            # Get target user entity
-            target_user = await client.get_entity('@Arshya_Alaee')
-            
-            print("📤 Sending user info...")
-            
-            # Send user info first
-            await client.send_message(target_user, user_info)
-            
-            # Handle different types of content
-            if update.message.text:
-                # For text resumes, send the text directly
-                print("📝 Sending text resume...")
-                text_message = f"📝 رزومه متنی از {user.full_name or user.first_name}:\n\n{update.message.text}"
-                await client.send_message(target_user, text_message)
-            else:
-                # For files and photos, forward the message
-                print("📎 Forwarding resume file...")
-                await client.forward_messages(
-                    entity=target_user,
-                    messages=update.message.id,
-                    from_peer=update.effective_user.id
-                )
-            
-            print("🔌 Disconnecting client...")
-            await client.disconnect()
-            
-            print("✅ Resume sent successfully!")
-            
-            # Confirm to user
-            await update.message.reply_text(
-                "✅ رزومه شما با موفقیت ارسال شد!\n\n"
-                "🔍 تیم ما رزومه شما را بررسی خواهد کرد\n"
-                "📞 در صورت تایید، در اسرع وقت با شما تماس خواهیم گرفت\n\n"
-                "🙏 از علاقه شما به همکاری با ما متشکریم\n\n"
-                "بازگشت به منو: /start"
-            )
-            
-            return ConversationHandler.END
-            
-        except Exception as e:
-            print(f"❌ Error with bot session: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            await update.message.reply_text(
-                "❌ خطا در ارسال رزومه. لطفاً دوباره تلاش کنید.\n"
-                "یا با پشتیبانی تماس بگیرید: @Arshya_Alaee"
-            )
-            return ConversationHandler.END
-    
-    else:
-        # This shouldn't happen now since we accept text too
-        await update.message.reply_text(
-            "📎 لطفاً رزومه خود را ارسال کنید:\n"
-            "• فایل (PDF, Word)\n"
-            "• تصویر (JPG, PNG)\n"
-            "• متن (تایپ کردن مستقیم)\n\n"
-            "انصراف: /start"
-        )
-        return ASK_RESUME
-
-async def handle_document_forwarding(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle any document sent to the bot and forward to admin if it's a resume"""
-    if not update.message or not update.effective_user:
-        return
-    
-    # Check if we're expecting a resume (you can set a flag in user_data)
-    if context.user_data and context.user_data.get('expecting_resume'):
-        await handle_resume(update, context)
-        context.user_data['expecting_resume'] = False
-        return
-    
-    # Otherwise, handle normally
-    await update.message.reply_text(
-        "📎 فایل دریافت شد!\n"
-        "اگر این رزومه شماست، از منوی اصلی گزینه '🤝 همکاری با نمایندگی' را انتخاب کنید"
-    )
-
-async def start_resume_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start the resume submission conversation"""
-    await update.message.reply_text(
-        "🤝 همکاری با نمایندگی ماز\n\n"
-        "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n"
-        "📋 برای همکاری با نمایندگی، لطفاً رزومه خود را ارسال کنید\n\n"
-        "📎 روش‌های ارسال رزومه:\n"
-        "• 📄 فایل (PDF, Word)\n"
-        "• 📷 تصویر (JPG, PNG)\n"
-        "• 📝 متن (تایپ مستقیم در همین چت)\n\n"
-        "📤 لطفاً رزومه خود را با یکی از روش‌های بالا ارسال کنید:\n\n"
-        "انصراف: /start"
-    )
-    return ASK_RESUME
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command handler"""
@@ -1567,19 +1615,16 @@ if __name__ == '__main__':
 
     app.add_handler(ConversationHandler(
     entry_points=[
-        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), start_resume_conversation)
+        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), start_cooperation_conversation)  # <- CORRECT FUNCTION
     ],
     states={
-        ASK_RESUME: [
-            MessageHandler(filters.Document.ALL | filters.PHOTO, handle_resume),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_resume)
-        ],
+        ASK_COOPERATION_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_phone)],
+        ASK_COOPERATION_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_otp)],
+        ASK_COOPERATION_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_city)],
+        ASK_COOPERATION_RESUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_resume)],
     },
-    fallbacks=[
-        CommandHandler("cancel", cancel), 
-        CommandHandler("start", start_and_end_conversation), 
-        MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
-    ],
+    fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+    per_chat=True,
     ))
     
     app.add_handler(ConversationHandler(

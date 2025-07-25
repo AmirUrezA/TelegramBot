@@ -1,5 +1,5 @@
 from random import choice
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table, Text
 from datetime import date, datetime
 from sqlalchemy.orm import ONETOMANY, relationship, declarative_base
 from sqlalchemy.types import Enum as SqlEnum
@@ -145,3 +145,14 @@ class Lottery(Base):
     description = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     participants = relationship("UsersInLottery", backref="lottery")
+
+class Cooperation(Base):
+    __tablename__ = "cooperation"
+
+    id = Column(Integer, primary_key=True)
+    telegram_id = Column(Integer, nullable=False)
+    username = Column(String, nullable=True)
+    phone_number = Column(String, nullable=False)
+    city = Column(String, nullable=False)
+    resume_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
