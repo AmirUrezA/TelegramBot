@@ -966,6 +966,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is not None:
         context.user_data.clear()
     
+    if context.args and len(context.args) > 0:
+        command = context.args[0]
+        
+        # Handle cooperation deep link
+        if command == "cooperation":
+            await start_cooperation_conversation(update, context)
+            return
+        elif command == "lottery":
+            await start_lottery_conversation(update, context)
+            return
+
     keyboard = [
         ["💎 خرید قسطی اشتراک الماس 💎"],
         ["📚 خرید محصولات با تخفیف ویژه نمایندگی 📚"],
