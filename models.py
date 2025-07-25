@@ -1,5 +1,5 @@
 from random import choice
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table, Text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table, Text, BigInteger
 from datetime import date, datetime
 from sqlalchemy.orm import ONETOMANY, relationship, declarative_base
 from sqlalchemy.types import Enum as SqlEnum
@@ -61,7 +61,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, nullable=False, unique=True)
+    telegram_id = Column(BigInteger, nullable=False, unique=True)
     username = Column(String, nullable=False, unique=False)
     number = Column(String, nullable=False, unique=True)
     area = Column(Integer, nullable=False)
@@ -93,7 +93,7 @@ class Seller(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    telegram_id = Column(Integer, nullable=False, unique=True)
+    telegram_id = Column(BigInteger, nullable=False, unique=True)
     number = Column(String, nullable=False, unique=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now)
@@ -131,7 +131,7 @@ class UsersInLottery(Base):
     __tablename__ = "users_in_lottery"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, nullable=False)
+    telegram_id = Column(BigInteger, nullable=False)
     username = Column(String, nullable=False)
     number = Column(String, nullable=False)
     lottery_id = Column(Integer, ForeignKey("lottery.id"), nullable=True)
@@ -150,7 +150,7 @@ class Cooperation(Base):
     __tablename__ = "cooperation"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, nullable=False)
+    telegram_id = Column(BigInteger, nullable=False)
     username = Column(String, nullable=True)
     phone_number = Column(String, nullable=False)
     city = Column(String, nullable=False)

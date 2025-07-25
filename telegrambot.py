@@ -1603,31 +1603,20 @@ if __name__ == '__main__':
     BOT_TOKEN = os.getenv('BOT_TOKEN')
     app = ApplicationBuilder().token(str(BOT_TOKEN)).build()
     
-    # Unified conversation handler that includes deep link support
     app.add_handler(ConversationHandler(
         entry_points=[
-            CommandHandler("start", start),  # Handles deep links and regular start
-            MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), start_cooperation_conversation)
+            CommandHandler("start", start),
+            MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), start_cooperation_conversation),
+            MessageHandler(filters.Regex("^(🎲 قرعه کشی)$"), start_lottery_conversation)
         ],
         states={
+            # Cooperation states
             ASK_COOPERATION_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_phone)],
             ASK_COOPERATION_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_otp)],
             ASK_COOPERATION_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_city)],
             ASK_COOPERATION_RESUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_resume)],
-        },
-        fallbacks=[
-            CommandHandler("cancel", cancel), 
-            CommandHandler("start", start_and_end_conversation), 
-            MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
-        ],
-        per_chat=True,
-    ))
-    
-    app.add_handler(ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^(🎲 قرعه کشی)$"), start_lottery_conversation)
-        ],
-        states={
+            
+            # Lottery states
             ASK_LOTTERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_selection)],
             ASK_LOTTERY_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_number)],
             ASK_LOTTERY_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_otp)],
@@ -1639,7 +1628,8 @@ if __name__ == '__main__':
         ],
         per_chat=True,
     ))
-
+    
+    # Registration conversation handler
     app.add_handler(ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name),
@@ -1656,6 +1646,7 @@ if __name__ == '__main__':
         fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
     
+    # CRM conversation handler
     app.add_handler(ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^(💬 مشاوره تلفنی رایگان)$"), ask_crm_phone),
@@ -1669,6 +1660,7 @@ if __name__ == '__main__':
         per_chat=True,
     ))
     
+    # Receipt upload conversation handler
     app.add_handler(ConversationHandler(
         entry_points=[
             CallbackQueryHandler(handle_upload_receipt_callback, pattern="^upload_receipt_")
@@ -1682,6 +1674,7 @@ if __name__ == '__main__':
         per_chat=True,
     ))
 
+    # Payment conversation handler
     app.add_handler(ConversationHandler(
         entry_points=[],
         states={
@@ -1691,8 +1684,8 @@ if __name__ == '__main__':
         fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
 
+    # Other handlers
     app.add_handler(CallbackQueryHandler(handle_button))
-    # Remove the duplicate start handler since it's now in the conversation handler
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("products", products))   
     app.add_handler(MessageHandler(filters.Regex("^(پرداخت نقدی|پرداخت قسطی)$"), handle_payment_method))
