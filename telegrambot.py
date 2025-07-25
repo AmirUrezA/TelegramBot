@@ -407,12 +407,11 @@ async def handle_cooperation_city(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text(
         "✅ شهر شما ثبت شد!\n\n"
         "📝 حالا لطفاً رزومه خود را به صورت متن ارسال کنید.\n"
-        "در رزومه خود موارد زیر را ذکر کنید:\n\n"
         "• سوابق تحصیلی\n"
-        "• سوابق کاری\n"
+        "• سوابق کاری در حیطه آموزش \n"
         "• مهارت‌ها و تخصص‌ها\n"
-        "• علاقه‌مندی‌ها\n"
-        "• انگیزه همکاری با ماز\n\n"
+        "• تعداد دانش آموزانی که به صورت مستقیم و غیرمستقیم باهاشون در ارتباط هستید \n"
+        "• انگیزه همکاری با ماز\n"
         "💡 هر چه رزومه شما کامل‌تر باشد، شانس بررسی بیشتری خواهد داشت:"
     )
     return ASK_COOPERATION_RESUME
@@ -959,6 +958,28 @@ async def start_and_end_conversation(update: Update, context: ContextTypes.DEFAU
     await start(update, context)
     return ConversationHandler.END
 
+async def start_cooperation_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start the cooperation conversation by asking for phone number"""
+    if not update.message:
+        return ConversationHandler.END
+    
+    await update.message.reply_text(
+        "🤝 همکاری با نمایندگی ماز\n\n"
+        "🌟 ما همیشه به دنبال افراد با انگیزه و متخصص هستیم\n\n"
+        "📱 لطفاً شماره موبایل خود را وارد کنید (مثال: 09123456789):\n\n"
+        "انصراف: /cancel",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return ASK_COOPERATION_PHONE
+
+async def handle_deep_link_cooperation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle deep link cooperation start"""
+    if context.user_data and context.user_data.get('deep_link_cooperation'):
+        # Clear the flag
+        context.user_data['deep_link_cooperation'] = False
+        return ASK_COOPERATION_PHONE
+    return ConversationHandler.END
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
@@ -971,11 +992,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Handle cooperation deep link
         if command == "cooperation":
-            await start_cooperation_conversation(update, context)
-            return
+            # Don't send message here, let the conversation handler do it
+            # Just return and let the conversation handler pick it up
+            return await start_cooperation_conversation(update, context)
         elif command == "lottery":
-            await start_lottery_conversation(update, context)
-            return
+            return await start_lottery_conversation(update, context)
 
     keyboard = [
         ["💎 خرید قسطی اشتراک الماس 💎"],
@@ -1581,87 +1602,96 @@ if __name__ == '__main__':
     BOT_TOKEN = os.getenv('BOT_TOKEN')
     app = ApplicationBuilder().token(str(BOT_TOKEN)).build()
     
+    # Unified conversation handler that includes deep link support
     app.add_handler(ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^(🎲 قرعه کشی)$"), start_lottery_conversation)],
-    states={
-        ASK_LOTTERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_selection)],
-        ASK_LOTTERY_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_number)],
-        ASK_LOTTERY_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_otp)],
-    },
-    fallbacks=[
-        CommandHandler("cancel", cancel), 
-        CommandHandler("start", start_and_end_conversation), 
-        MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
-    ],
-    per_chat=True,
-    ))
-
-    app.add_handler(ConversationHandler(
-    entry_points=[
-        MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name),
-        CallbackQueryHandler(handle_authorize_callback, pattern="^authorize$")
-    ],
-    states={
-        ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
-        ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city)],
-        ASK_AREA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_area)],
-        ASK_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_id)],
-        ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
-        ASK_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_otp)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+        entry_points=[
+            CommandHandler("start", start),  # Handles deep links and regular start
+            MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), start_cooperation_conversation)
+        ],
+        states={
+            ASK_COOPERATION_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_phone)],
+            ASK_COOPERATION_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_otp)],
+            ASK_COOPERATION_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_city)],
+            ASK_COOPERATION_RESUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_resume)],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel), 
+            CommandHandler("start", start_and_end_conversation), 
+            MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
+        ],
+        per_chat=True,
     ))
     
     app.add_handler(ConversationHandler(
-    entry_points=[
-                    MessageHandler(filters.Regex("^(💬 مشاوره تلفنی رایگان)$"), ask_crm_phone),
-                    CallbackQueryHandler(handle_not_sure_callback, pattern="^not_sure$")],
-    states={
-        ASK_CRM_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_phone)],
-        ASK_CRM_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_otp)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
-    per_chat=True,
+        entry_points=[
+            MessageHandler(filters.Regex("^(🎲 قرعه کشی)$"), start_lottery_conversation)
+        ],
+        states={
+            ASK_LOTTERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_selection)],
+            ASK_LOTTERY_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_number)],
+            ASK_LOTTERY_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_lottery_otp)],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel), 
+            CommandHandler("start", start_and_end_conversation), 
+            MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
+        ],
+        per_chat=True,
     ))
 
     app.add_handler(ConversationHandler(
-    entry_points=[
-        MessageHandler(filters.Regex("^(🤝 همکاری با نمایندگی)$"), start_cooperation_conversation)  # <- CORRECT FUNCTION
-    ],
-    states={
-        ASK_COOPERATION_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_phone)],
-        ASK_COOPERATION_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_otp)],
-        ASK_COOPERATION_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_city)],
-        ASK_COOPERATION_RESUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cooperation_resume)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
-    per_chat=True,
+        entry_points=[
+            MessageHandler(filters.Regex("^(👤 ثبت نام)$"), ask_name),
+            CallbackQueryHandler(handle_authorize_callback, pattern="^authorize$")
+        ],
+        states={
+            ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
+            ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city)],
+            ASK_AREA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_area)],
+            ASK_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_id)],
+            ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
+            ASK_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_otp)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
     
     app.add_handler(ConversationHandler(
-    entry_points=[
-        CallbackQueryHandler(handle_upload_receipt_callback, pattern="^upload_receipt_")
-    ],
-    states={
-        ASK_RECEIPT_INSTALLMENT: [
-            MessageHandler(filters.PHOTO, handle_payment_proof)
-        ]
-    },
-    fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
-    per_chat=True,
+        entry_points=[
+            MessageHandler(filters.Regex("^(💬 مشاوره تلفنی رایگان)$"), ask_crm_phone),
+            CallbackQueryHandler(handle_not_sure_callback, pattern="^not_sure$")
+        ],
+        states={
+            ASK_CRM_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_phone)],
+            ASK_CRM_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_otp)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+        per_chat=True,
+    ))
+    
+    app.add_handler(ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(handle_upload_receipt_callback, pattern="^upload_receipt_")
+        ],
+        states={
+            ASK_RECEIPT_INSTALLMENT: [
+                MessageHandler(filters.PHOTO, handle_payment_proof)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+        per_chat=True,
     ))
 
     app.add_handler(ConversationHandler(
-    entry_points=[],
-    states={
-        ASK_PAYMENT_METHOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_method)],
-        ASK_PAYMENT_PROOF: [MessageHandler(filters.PHOTO, handle_payment_proof)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+        entry_points=[],
+        states={
+            ASK_PAYMENT_METHOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_method)],
+            ASK_PAYMENT_PROOF: [MessageHandler(filters.PHOTO, handle_payment_proof)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
 
     app.add_handler(CallbackQueryHandler(handle_button))
-    app.add_handler(CommandHandler("start", start))
+    # Remove the duplicate start handler since it's now in the conversation handler
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("products", products))   
     app.add_handler(MessageHandler(filters.Regex("^(پرداخت نقدی|پرداخت قسطی)$"), handle_payment_method))
@@ -1670,7 +1700,6 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation))
     
     app.add_error_handler(error_handler)
-
     
     print("Bot is running...")
     app.run_polling()
