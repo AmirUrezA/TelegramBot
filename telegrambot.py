@@ -630,7 +630,7 @@ async def process_order_with_referral(update: Update, context: ContextTypes.DEFA
 
     async with AsyncSessionLocal() as session:
         referral_result = await session.execute(
-            select(ReferralCode).where(ReferralCode.code == referral_code)
+            select(ReferralCode).where(ReferralCode.code == referral_code.lower())
         )
         referral = referral_result.scalar_one_or_none()
 
