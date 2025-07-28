@@ -26,6 +26,8 @@ services:
     image: postgres:15
     container_name: postgres_db
     restart: always
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: mybot
       POSTGRES_USER: postgres
