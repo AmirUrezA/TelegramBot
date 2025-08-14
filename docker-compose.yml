@@ -34,6 +34,12 @@ services:
       POSTGRES_PASSWORD: amir
     volumes:
       - db_data:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "log_connections=on"
+      - "-c"
+      - "log_line_prefix=%m [%p] %q%u@%d <rhost=%h>"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d mybot"]
       interval: 10s

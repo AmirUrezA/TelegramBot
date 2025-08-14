@@ -1,0 +1,6 @@
+[Unit]
+Description=Extract Postgres failed login attempts from Docker logs (plain text for Fail2ban)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/postgres-docker-auth-extract.sh 

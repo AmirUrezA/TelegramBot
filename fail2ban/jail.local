@@ -1,0 +1,11 @@
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1
+
+[postgresql]
+enabled  = true
+port     = 5432
+filter   = postgresql
+logpath  = /var/log/postgresql/postgres_auth_fail.log
+maxretry = 5
+findtime = 600
+bantime  = 3600 

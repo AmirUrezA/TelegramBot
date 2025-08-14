@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Postgres auth-fail extractor every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=pg-fail2ban-extract.service
+
+[Install]
+WantedBy=timers.target 
