@@ -38,7 +38,7 @@ major_map = {
 
 (ASK_NAME,ASK_CITY, ASK_AREA,ASK_ID, ASK_PHONE, ASK_OTP) = range(6)
 
-ASK_PAYMENT_METHOD, ASK_PAYMENT_PROOF = range(100, 102)
+ASK_REFERRAL_CODE, ASK_PAYMENT_METHOD, ASK_PAYMENT_PROOF = range(100, 103)
 
 ASK_CRM_PHONE, ASK_CRM_OTP = range(200, 202)
 
@@ -599,11 +599,13 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
             )
         elif update.message:
             await update.message.reply_text("کد معرف دارید؟", reply_markup=reply_markup)
+        
+        return ASK_REFERRAL_CODE
 
 async def handle_referral_code_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle referral code input from user"""
     if not update.message:
-        return
+        return ASK_REFERRAL_CODE
     
     user_input = update.message.text
     
@@ -611,17 +613,16 @@ async def handle_referral_code_input(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("لطفا کد معرف خود را وارد کنید:")
         if context.user_data is not None:
             context.user_data['waiting_for_referral_code'] = True
-        return
+        return ASK_REFERRAL_CODE
     elif user_input == "کد معرف ندارم(تخفیف پیشفرض ربات)":
         if context.user_data is None:
-            context.user_data.clear()
+            context.user_data = {}
         context.user_data['waiting_for_referral_code'] = False
-        await process_order_without_referral(update, context)
-        return
+        return await process_order_without_referral(update, context)
     elif context.user_data is not None and context.user_data.get('waiting_for_referral_code'):
         if user_input is not None:
-            await process_order_with_referral(update, context, user_input)
-        return
+            return await process_order_with_referral(update, context, user_input)
+        return ASK_REFERRAL_CODE
 
 async def process_order_with_referral(update: Update, context: ContextTypes.DEFAULT_TYPE, referral_code: str):
     if not update.effective_user or not update.message:
@@ -869,10 +870,6 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
         return
     
     product_names = context.user_data.get("products", [])
-    
-    if context.user_data.get('waiting_for_referral_code') or user_input in ["کد معرف دارم", "کد معرف ندارم(تخفیف پیشفرض ربات)"]:
-        await handle_referral_code_input(update, context)
-        return
     
     if user_input in product_names:
         async with AsyncSessionLocal() as session:
@@ -1392,16 +1389,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     print(f"Button clicked: {query.data}")
     
-    if query.data and query.data.startswith("buy_"):
-        try:
-            product_id = int(query.data.split("_")[1])
-            print(f"Processing buy for product ID: {product_id}")
-            await buy_product(update, context, product_id)
-            
-        except (ValueError, IndexError) as e:
-            print(f"Error parsing product ID: {e}")
-            await query.edit_message_text("خطا در پردازش درخواست خرید")
-    elif query.data == "back_to_menu":
+    if query.data == "back_to_menu":
         if context.user_data is not None:
             context.user_data.clear()
         
@@ -1674,8 +1662,11 @@ if __name__ == '__main__':
 
     # Payment conversation handler
     app.add_handler(ConversationHandler(
-        entry_points=[],
+        entry_points=[
+            CallbackQueryHandler(lambda update, context: buy_product(update, context, int(update.callback_query.data.split("_")[1])), pattern="^buy_")
+        ],
         states={
+            ASK_REFERRAL_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_referral_code_input)],
             ASK_PAYMENT_METHOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_method)],
             ASK_PAYMENT_PROOF: [MessageHandler(filters.PHOTO, handle_payment_proof)],
         },
@@ -1686,7 +1677,6 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("products", products))   
-    app.add_handler(MessageHandler(filters.Regex("^(پرداخت نقدی|پرداخت قسطی)$"), handle_payment_method))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard_button))
     
     app.add_handler(MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation))
