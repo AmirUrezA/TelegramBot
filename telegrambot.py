@@ -55,7 +55,7 @@ def is_menu_command(text: str) -> bool:
     menu_commands = [
         "👤 ثبت نام",
         "🎲 قرعه کشی", 
-        "📚 خرید محصولات با تخفیف ویژه نمایندگی 📚",
+        "📚 خرید ویژه محصولات از نمایندگی 📚",
         "💡 راهنما",
         "💬 تماس با ما",
         "🔙 بازگشت به منو",
@@ -88,7 +88,7 @@ async def handle_menu_command_in_conversation(update: Update, context: ContextTy
     elif text == "🎲 قرعه کشی":
         await lottery(update, context)
         return ConversationHandler.END
-    elif text == "📚 خرید محصولات با تخفیف ویژه نمایندگی 📚":
+    elif text == "📚 خرید ویژه محصولات از نمایندگی 📚":
         await show_products_menu(update, context)
         return ConversationHandler.END
     elif text == "💡 راهنما":
@@ -683,7 +683,7 @@ async def process_order_without_referral(update: Update, context: ContextTypes.D
         context.user_data['product_data'] = product
 
         context.user_data['referral'] = None
-        context.user_data['discount'] = 500000
+        context.user_data['discount'] = 0
         context.user_data['waiting_for_referral_code'] = False
 
 
@@ -736,7 +736,7 @@ async def ask_for_payment_proof(update: Update, context: ContextTypes.DEFAULT_TY
     else:
         discount = context.user_data.get("discount", 0)
 
-    final_price = product.price - discount
+    final_price = product.price
     installment = context.user_data.get('payment_type') == 'installment'
 
     if installment:
@@ -918,7 +918,7 @@ async def handle_reply_keyboard_button(update: Update, context: ContextTypes.DEF
     elif user_input == "🎲 قرعه کشی":
         await lottery(update, context)
         return
-    elif user_input == "📚 خرید محصولات با تخفیف ویژه نمایندگی 📚":
+    elif user_input == "📚 خرید ویژه محصولات از نمایندگی 📚":
         await show_products_menu(update, context)
     elif user_input == "💡 راهنما":
         await help(update, context)
@@ -996,7 +996,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         ["💎 خرید قسطی اشتراک الماس 💎"],
-        ["📚 خرید محصولات با تخفیف ویژه نمایندگی 📚"],
+        ["📚 خرید ویژه محصولات از نمایندگی 📚"],
         ["💰 درآمد زایی و معرفی دوستان", "💬 مشاوره تلفنی رایگان"],
         ["💳 اقساط من", "🎲 قرعه کشی"], 
         ["👩‍💻 پشتیبانی", "🤝 همکاری با نمایندگی"],
@@ -1610,7 +1610,7 @@ if __name__ == '__main__':
         fallbacks=[
             CommandHandler("cancel", cancel), 
             CommandHandler("start", start_and_end_conversation), 
-            MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
+            MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید ویژه محصولات از نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)
         ],
         per_chat=True,
     ))
@@ -1629,7 +1629,7 @@ if __name__ == '__main__':
             ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
             ASK_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_otp)],
         },
-        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید ویژه محصولات از نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
     
     # CRM conversation handler
@@ -1642,7 +1642,7 @@ if __name__ == '__main__':
             ASK_CRM_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_phone)],
             ASK_CRM_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_crm_otp)],
         },
-        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید ویژه محصولات از نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
         per_chat=True,
     ))
     
@@ -1656,7 +1656,7 @@ if __name__ == '__main__':
                 MessageHandler(filters.PHOTO, handle_payment_proof)
             ]
         },
-        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید ویژه محصولات از نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
         per_chat=True,
     ))
 
@@ -1670,7 +1670,7 @@ if __name__ == '__main__':
             ASK_PAYMENT_METHOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_method)],
             ASK_PAYMENT_PROOF: [MessageHandler(filters.PHOTO, handle_payment_proof)],
         },
-        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start_and_end_conversation), MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید ویژه محصولات از نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation)],
     ))
 
     # Other handlers
@@ -1679,7 +1679,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("products", products))   
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard_button))
     
-    app.add_handler(MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید محصولات با تخفیف ویژه نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation))
+    app.add_handler(MessageHandler(filters.Regex("^(🔙 بازگشت به منو|👤 ثبت نام|🎲 قرعه کشی|📚 خرید ویژه محصولات از نمایندگی 📚|💡 راهنما|💬 تماس با ما|💎 خرید قسطی اشتراک الماس 💎|💳 اقساط من|💬 مشاوره تلفنی رایگان|👩‍💻 پشتیبانی|🤝 همکاری با نمایندگی)$"), handle_menu_command_in_conversation))
     
     app.add_error_handler(error_handler)
     
