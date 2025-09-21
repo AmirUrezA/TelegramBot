@@ -1,0 +1,35 @@
+# Docker Compose Override Example
+# Copy this to docker-compose.override.yml and customize for your environment
+
+version: '3.8'
+
+services:
+  bot:
+    # Uncomment to mount source code for development
+    # volumes:
+    #   - ./app:/app/app:ro
+    #   - ./run_bot.py:/app/run_bot.py:ro
+    
+    # Development environment variables
+    environment:
+      - LOG_LEVEL=DEBUG
+      - LOG_FILE_PATH=/app/logs/bot.log
+    
+    # Uncomment for development debugging
+    # ports:
+    #   - "5678:5678"  # Debug port
+
+  db:
+    # Uncomment to expose database port for external access
+    ports:
+      - "5432:5432"
+    
+    # Development database settings
+    environment:
+      - POSTGRES_DB=telegram_bot_dev
+      - POSTGRES_USER=dev_user
+      - POSTGRES_PASSWORD=dev_password
+
+  # Enable PgAdmin for development
+  pgadmin:
+    profiles: []  # Remove 'development' profile to always run

@@ -1,70 +1,194 @@
+version: '3.8'
+
 services:
   bot:
-    build: .
-    container_name: telegram_bot
-    restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: enterprise_telegram_bot
+    restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-amir}@db:5432/${POSTGRES_DB:-telegram_bot}
+      - PYTHONPATH=/app
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - bot_logs:/app/logs
+      - bot_receipts:/app/receipts
+      - ./alembic.ini:/app/alembic.ini:ro
+      - ./alembic:/app/alembic:ro
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "python", "-c", "from app.config.settings import config; config.validate()"]
+      interval: 45s
+      timeout: 15s
       retries: 3
-      start_period: 40s
+      start_period: 90s
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
     networks:
       - botnet
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
 
   db:
-    image: postgres:15
-    container_name: postgres_db
-    restart: always
+    image: postgres:15-alpine
+    container_name: enterprise_postgres_db
+    restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: mybot
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: amir
+      POSTGRES_DB: ${POSTGRES_DB:-telegram_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-amir}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     volumes:
       - db_data:/var/lib/postgresql/data
+      # - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro  # Uncomment if you have custom config
     command:
       - "postgres"
+      # Add custom config file if needed: - "-c" - "config_file=/etc/postgresql/postgresql.conf"
       - "-c"
       - "log_connections=on"
       - "-c"
-      - "log_line_prefix=%m [%p] %q%u@%d <rhost=%h>"
+      - "log_disconnections=on"
+      - "-c"
+      - "log_line_prefix=%m [%p] %q%u@%d <rhost=%h> "
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d mybot"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-telegram_bot}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     networks:
       - botnet
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
+  # Database migration service (runs once)
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bot_migration
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-amir}@db:5432/${POSTGRES_DB:-telegram_bot}
+      - PYTHONPATH=/app
+    volumes:
+      - ./alembic.ini:/app/alembic.ini:ro
+      - ./alembic:/app/alembic:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    networks:
+      - botnet
+    profiles:
+      - migration
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: bot_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - botnet
+    profiles:
+      - with-redis
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # PgAdmin for database management (development)
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: pgadmin
-    restart: always
+    container_name: bot_pgadmin
+    restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     depends_on:
       - db
     networks:
       - botnet
+    profiles:
+      - development
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Monitoring with Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bot_prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    networks:
+      - botnet
+    profiles:
+      - monitoring
 
 networks:
   botnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
 
 volumes:
   db_data:
+    driver: local
+  bot_logs:
+    driver: local
+  bot_receipts:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  prometheus_data:
+    driver: local

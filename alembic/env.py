@@ -16,7 +16,9 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from models import Base  # Import all models
+# Import Base and all models from the new app structure
+from app.models.base import Base
+from app.models import *  # Import all models
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
@@ -37,7 +39,15 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    # Get URL from environment or use default for local development
+    url = os.getenv("DATABASE_URL", "postgresql://postgres:amir@localhost:5432/mybot")
+    # Remove +asyncpg for alembic (needs sync driver)
+    if url.startswith("postgresql+asyncpg://"):
+        url = url.replace("postgresql+asyncpg://", "postgresql://")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -56,6 +66,19 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    # Get database URL from environment for both local and Docker environments
+    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:amir@localhost:5432/mybot")
+    # Remove +asyncpg for alembic (needs sync driver)  
+    if db_url.startswith("postgresql+asyncpg://"):
+        db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    
+    # Override the sqlalchemy.url in the config
+    config.set_main_option("sqlalchemy.url", db_url)
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
